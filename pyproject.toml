@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "darm-guard"
+version = "0.1.0"
+description = "Formally verified agent tool-authorization governance"
+authors = [{name = "Olusanya Gbolahan V"}]
+requires-python = ">=3.9"
+license = {text = "MIT"}
+readme = "README.md"
+keywords = ["ai-safety", "agent-governance", "formal-verification"]
+
+[project.urls]
+"Formal Backing" = "https://github.com/Goblohan/darm-monitor"
+"Source" = "https://github.com/Goblohan/Darm-Guard"
