@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=64"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "darm-guard"
@@ -15,3 +15,6 @@ keywords = ["ai-safety", "agent-governance", "formal-verification"]
 [project.urls]
 "Formal Backing" = "https://github.com/Goblohan/darm-monitor"
 "Source" = "https://github.com/Goblohan/Darm-Guard"
+
+[tool.setuptools.packages.find]
+include = ["darm_guard*"]
