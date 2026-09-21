@@ -24,6 +24,9 @@ class DARMGuard:
         self.session = Session(credential, policy, session_id)
         self._log_file = log_file
         self._stderr_alerts = True
+        if self.mode == Mode.OBSERVE:
+            print("[DARM] OBSERVE mode: tool calls are logged and classified "
+                  "but NEVER blocked.", file=sys.stderr)
 
     def check(self, requested_tools: Set[str], now: Optional[datetime] = None) -> TransferResult:
         tools = frozenset(requested_tools)

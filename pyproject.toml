@@ -1,14 +1,14 @@
 [build-system]
-requires = ["setuptools>=64"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "darm-guard"
-version = "0.1.0"
-description = "Formally verified agent tool-authorization governance"
+version = "0.1.1"
+description = "Agent tool-authorization guard grounded in a machine-checked Lean 4 theory"
 authors = [{name = "Olusanya Gbolahan V"}]
 requires-python = ">=3.9"
-license = {text = "MIT"}
+license = "MIT"
 readme = "README.md"
 keywords = ["ai-safety", "agent-governance", "formal-verification"]
 
