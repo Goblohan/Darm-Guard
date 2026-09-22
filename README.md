@@ -43,7 +43,9 @@ KernelGuard checks the tool, its arguments, and where each argument came from. E
 
 Proved about the kernel's decision function: an admitted invocation passed all five checks, and an expired credential, a tool outside the credential, or any untrusted argument value can never be admitted.
 
-**Requirements and limits.** pip install does not yet include the kernel binary: build it from darm-monitor with lake build darmkernel, then pass its path or set DARM_KERNEL_PATH. Not proved: this Python module, JSON encoding, argument-to-string conversion, expiry computation, the kernel's JSON parser and I/O loop, and the Lean compiler. The guard fails closed if the kernel is missing, crashes, or times out. Provenance labels come from the caller; the guard does not infer lineage.
+**Install the kernel.** After pip install darm-guard, run darm-guard-install-kernel. It downloads the kernel binary that darm-monitor's CI built from tag kernel-v0.1.0 and installs it only if its SHA-256 matches the value pinned in this package. Linux x86_64 only; elsewhere, build it with lake build darmkernel and set DARM_KERNEL_PATH. Kernels are never downloaded during an authorization check.
+
+**Limits.** Not proved: this Python module, JSON encoding, argument-to-string conversion, expiry computation, the kernel's JSON parser and I/O loop, and the Lean compiler. The guard fails closed if the kernel is missing, crashes, or times out. Provenance labels come from the caller; the guard does not infer lineage.
 
 ## Three Modes
 
@@ -58,6 +60,18 @@ Proved about the kernel's decision function: an admitted invocation passed all f
     result = guard.check({"code_exec"})
     # result.admitted == False
     # O-failure: code_exec -- not in observation model
+
+## Claim strata
+
+Each layer's claim is weaker than the one above it, and none inherits another's.
+
+| Stratum | Established | How | Not inherited |
+|---|---|---|---|
+| S1 Obligations | ODATS necessity, conservation, IC1/R22 correspondence | Lean proofs, CI-audited (darm-monitor) | Anything about a specific implementation |
+| S2 Kernel | kernelDecide's own properties: admission soundness; expired, uncredentialed, or untrusted invocations never admitted | Lean proofs, kernel-checked (K1) | That the kernel refines S1: currently alignment by design, not proof |
+| S3 Binary | Built by CI from the tagged, verified commit; SHA-256 pinned in this package | Provenance and tests | Correct compilation: the JSON parser, I/O loop, and Lean compiler are trusted |
+| S4 Runtime | KernelGuard asks the kernel for every decision and fails closed | Tests | Complete mediation: callers can bypass it; provenance labels are caller-supplied |
+| S5 World | Nothing | -- | Physical safety: an explicit assumption (TMC), not a result |
 
 ## What is and is not guaranteed
 
@@ -124,7 +138,7 @@ The conditions behind each check are proved in [darm-monitor](https://github.com
 ## Roadmap
 
 - v0.3 (this release) -- KernelGuard: invocation-level, provenance-aware, decisions computed by the Lean kernel.
-- Next -- prebuilt kernel binaries so pip install is self-contained; DARM Verify, conformance testing of other gates against the kernel.
+- Next -- K3: prove the kernel's correspondence to the R22, E17, and E18 obligations (S2 to S1); differential testing of the binary against Lean's own evaluation (strengthens S3); DARM Verify, conformance testing of other gates against the kernel.
 - Later -- credential-holding enforcement broker for one domain; gated credential expansion.
 
 ## License
