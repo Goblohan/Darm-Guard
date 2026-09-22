@@ -4,10 +4,12 @@ from .types import FailureKind, FailureWitness, DriftLevel, Credential, Policy, 
 from .guard import DARMGuard, Mode
 from .session import Session, SessionEvent
 from .checker import check_transfer
+from .kernel import KernelGuard, KernelClient, KernelPolicy, ToolRule, ArgRule, KernelDecision
 
 __version__ = "0.1.1"
 __all__ = [
     "DARMGuard", "Mode", "Policy", "Credential", "TransferResult",
     "FailureKind", "FailureWitness", "DriftLevel",
     "Session", "SessionEvent", "check_transfer",
+    "KernelGuard", "KernelClient", "KernelPolicy", "ToolRule", "ArgRule", "KernelDecision",
 ]
