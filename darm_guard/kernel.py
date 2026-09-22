@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 from typing import Dict, FrozenSet, List, Optional
 
 from .guard import Mode
+from .install import verified_kernel_path
 
 PROVENANCES = ("authoritative", "derived", "untrusted")
 
@@ -80,7 +81,7 @@ class KernelClient:
     """Talks to a long-running darmkernel process. Contains no decision logic."""
 
     def __init__(self, path: Optional[str] = None, timeout: float = 5.0):
-        self.path = path or os.environ.get("DARM_KERNEL_PATH", "")
+        self.path = path or os.environ.get("DARM_KERNEL_PATH", "") or verified_kernel_path()
         self.timeout = timeout
         self._proc = None
         self._lock = threading.Lock()
@@ -102,7 +103,7 @@ class KernelClient:
         with self._lock:
             try:
                 if not self.path:
-                    return KernelDecision(False, error="no kernel path (set DARM_KERNEL_PATH)")
+                    return KernelDecision(False, error="no kernel: run darm-guard-install-kernel or set DARM_KERNEL_PATH")
                 if self._proc is None or self._proc.poll() is not None:
                     self._start()
                 self._proc.stdin.write(json.dumps(request) + "\n")

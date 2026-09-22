@@ -13,7 +13,7 @@ POLICY = KernelPolicy(tools=(
 def guard(**kw):
     kw.setdefault("tools", {"file_read"})
     kw.setdefault("default_provenance", "authoritative")
-    return KernelGuard(POLICY, kernel_path=KERNEL, **kw)
+    return KernelGuard(POLICY, kernel_path=KERNEL or None, **kw)
 
 def test_admit_allowed_path():
     assert guard().check("file_read", {"path": "/workspace/notes.txt"}).admitted
@@ -54,8 +54,6 @@ def test_default_provenance_required():
         pass
 
 if __name__ == "__main__":
-    if not KERNEL:
-        print("Set DARM_KERNEL_PATH to the darmkernel binary"); sys.exit(2)
     passed = 0
     tests = [(n, f) for n, f in list(globals().items()) if n.startswith("test_")]
     for name, fn in tests:
