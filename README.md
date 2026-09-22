@@ -68,7 +68,7 @@ Each layer's claim is weaker than the one above it, and none inherits another's.
 | Stratum | Established | How | Not inherited |
 |---|---|---|---|
 | S1 Obligations | ODATS necessity, conservation, IC1/R22 correspondence | Lean proofs, CI-audited (darm-monitor) | Anything about a specific implementation |
-| S2 Kernel | kernelDecide's own properties: admission soundness; expired, uncredentialed, or untrusted invocations never admitted | Lean proofs, kernel-checked (K1) | That the kernel refines S1: currently alignment by design, not proof |
+| S2 Kernel | kernelDecide's own properties: admission soundness; expired, uncredentialed, or untrusted invocations never admitted | Lean proofs, kernel-checked (K1); correspondence to S1 proved in K3a/K3b: exact agreement with E17's gate, admission-level agreement with E18 ODATS, separation of R22's collapsed pair | E15's causal lift (rests on TMC); E18 diagnosis order (kernel T-first, E18 O-first); domain completeness, which the kernel assumes rather than checks |
 | S3 Binary | Built by CI from the tagged, verified commit; SHA-256 pinned in this package | Provenance and tests | Correct compilation: the JSON parser, I/O loop, and Lean compiler are trusted |
 | S4 Runtime | KernelGuard asks the kernel for every decision and fails closed | Tests | Complete mediation: callers can bypass it; provenance labels are caller-supplied |
 | S5 World | Nothing | -- | Physical safety: an explicit assumption (TMC), not a result |
