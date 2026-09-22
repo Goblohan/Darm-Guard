@@ -22,6 +22,29 @@ An agent tool-authorization guard, grounded in a machine-checked Lean 4 theory o
     guard.check({"file_read"})   # admitted, within credential
     guard.check({"code_exec"})   # admitted in OBSERVE mode, but reported
 
+## Kernel-backed guard (v0.3, recommended)
+
+KernelGuard checks the tool, its arguments, and where each argument came from. Every allow/deny decision is computed by the DARM decision kernel: a Lean 4 function with machine-checked properties (darm-monitor K1DecisionKernel), compiled to a native binary (K2DecisionServer). The Python side only formats requests.
+
+    from darm_guard import KernelGuard, KernelPolicy, ToolRule, ArgRule
+
+    policy = KernelPolicy(tools=(
+        ToolRule("file_read", (ArgRule("path", allowed_prefixes=("/workspace/",)),)),
+    ))
+    guard = KernelGuard(policy, tools={"file_read"},
+                        default_provenance="untrusted",
+                        kernel_path="/path/to/darmkernel")
+
+    guard.check("file_read", {"path": "/workspace/notes.txt"},
+                provenance={"path": "authoritative"})         # admitted
+    guard.check("file_read", {"path": "/etc/passwd"},
+                provenance={"path": "authoritative"})         # rejected: semantic
+    guard.check("file_read", {"path": "/workspace/notes.txt"})  # rejected: provenance
+
+Proved about the kernel's decision function: an admitted invocation passed all five checks, and an expired credential, a tool outside the credential, or any untrusted argument value can never be admitted.
+
+**Requirements and limits.** pip install does not yet include the kernel binary: build it from darm-monitor with lake build darmkernel, then pass its path or set DARM_KERNEL_PATH. Not proved: this Python module, JSON encoding, argument-to-string conversion, expiry computation, the kernel's JSON parser and I/O loop, and the Lean compiler. The guard fails closed if the kernel is missing, crashes, or times out. Provenance labels come from the caller; the guard does not infer lineage.
+
 ## Three Modes
 
 **OBSERVE (default)** -- logs and classifies every call. Never blocks. Prints a warning saying so.
@@ -38,7 +61,7 @@ An agent tool-authorization guard, grounded in a machine-checked Lean 4 theory o
 
 ## What is and is not guaranteed
 
-DARM Guard v0.1.x operates at the **tool-name** level. It is grounded in a machine-checked Lean theory, but the Python runtime itself is not formally verified.
+The v0.1 DARMGuard API operates at the **tool-name** level, and the notes below apply to it. For argument-level, kernel-computed decisions, use KernelGuard (above). It is grounded in a machine-checked Lean theory, but the Python runtime itself is not formally verified.
 
 **Guaranteed by the runtime:**
 
@@ -100,9 +123,9 @@ The conditions behind each check are proved in [darm-monitor](https://github.com
 
 ## Roadmap
 
-- v0.2 -- invocation-level authorization (tool + arguments), gated credential expansion, invocation-bound decision tokens.
-- v0.3 -- decision computed by a Lean kernel via the existing C-ABI.
-- v0.4 -- credential-holding enforcement broker for one domain.
+- v0.3 (this release) -- KernelGuard: invocation-level, provenance-aware, decisions computed by the Lean kernel.
+- Next -- prebuilt kernel binaries so pip install is self-contained; DARM Verify, conformance testing of other gates against the kernel.
+- Later -- credential-holding enforcement broker for one domain; gated credential expansion.
 
 ## License
 
