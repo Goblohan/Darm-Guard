@@ -25,6 +25,7 @@ import os
 import socketserver
 import threading
 from dataclasses import dataclass
+from datetime import datetime
 from typing import List, Optional, Tuple
 
 from .kernel import KernelClient
@@ -39,13 +40,24 @@ class BrokerConfig:
     credential_tools: Tuple[str, ...]
     registry: frozenset             # values the principal registered
     workspace: str                  # real directory behind /workspace/
+    issued_at: Optional[datetime] = None   # credential lifetime start
+    ttl_seconds: Optional[float] = None    # credential lifetime length
 
     @staticmethod
     def load(config_path: str, registry_path: str) -> "BrokerConfig":
         cfg = json.load(open(config_path))
         reg = [line.strip() for line in open(registry_path) if line.strip()]
+        issued = cfg.get("issued_at")
         return BrokerConfig(cfg["policy"], tuple(cfg["credential_tools"]),
-                            frozenset(reg), os.path.realpath(cfg["workspace"]))
+                            frozenset(reg), os.path.realpath(cfg["workspace"]),
+                            datetime.fromisoformat(issued) if issued else None,
+                            cfg.get("ttl_seconds"))
+
+    def expired(self, now: Optional[datetime] = None) -> bool:
+        if self.issued_at is None or self.ttl_seconds is None:
+            return False
+        now = now or datetime.now(self.issued_at.tzinfo)
+        return (now - self.issued_at).total_seconds() > self.ttl_seconds
 
 
 def sha256_file(path: str) -> str:
@@ -144,7 +156,7 @@ class Broker:
     def __init__(self, cfg: BrokerConfig, kernel: KernelClient, audit: AuditLog):
         self.cfg, self.kernel, self.audit = cfg, kernel, audit
 
-    def decide(self, obj):
+    def decide(self, obj, now=None):
         """Pure B1 brokerStep: no execution, no audit.
         Returns (canonical invocation or None, tool or None, response)."""
         parsed = parse_proposal(obj)
@@ -156,7 +168,8 @@ class Broker:
                 return None, tool, {"decision": "reject", "error": "path not in normal form"}
         inv = canonicalize(self.cfg, tool, args)
         request = {"policy": self.cfg.policy,
-                   "credential": {"tools": list(self.cfg.credential_tools), "expired": False},
+                   "credential": {"tools": list(self.cfg.credential_tools),
+                                  "expired": self.cfg.expired(now)},
                    "invocation": inv}
         d = self.kernel.decide(request)
         if not d.admitted:
