@@ -96,7 +96,19 @@ def darmguard_v01(req: dict) -> Verdict:
     return Verdict(r.admitted, r.failures[0].kind.name.lower() if r.failures else None)
 
 
-ADAPTERS = {"allow-all": allow_all, "darmguard-v0.1": darmguard_v01}
+def _agentlock(req: dict) -> Verdict:
+    from .adapters.agentlock_adapter import agentlock_adapter
+    return agentlock_adapter(req)
+
+
+def _agentlock_scenario(rng) -> dict:
+    from .adapters.agentlock_adapter import scenario
+    return scenario(rng)
+
+
+ADAPTERS = {"allow-all": allow_all, "darmguard-v0.1": darmguard_v01,
+            "agentlock": _agentlock}
+GENERATORS = {"agentlock": _agentlock_scenario}   # gate-specific scenario sets
 
 
 # ---- Report ------------------------------------------------------------
@@ -144,12 +156,14 @@ class Report:
 # ---- Comparison --------------------------------------------------------
 
 def verify(name: str, adapter: Adapter, n: int = 1000, seed: int = 20260922,
-           kernel: Optional[KernelClient] = None) -> Report:
+           kernel: Optional[KernelClient] = None, generator=None) -> Report:
     """Run n seeded scenarios through the gate and the kernel; record disagreements.
     Stops if the kernel itself errors: with no referee, no verdict is reported."""
     kernel = kernel or KernelClient()
     rep = Report(name, n, seed)
-    for i, req in enumerate(scenarios(n, seed)):
+    gen_fn, rng = generator or _gen, random.Random(seed)
+    for i in range(n):
+        req = gen_fn(rng)
         g = adapter(req)
         if not g.supported:
             rep.unsupported[g.reason or "unspecified"] += 1
@@ -180,7 +194,8 @@ def main() -> None:
                     help="exit 1 if the gate admits anything the kernel rejects")
     a = ap.parse_args()
     try:
-        rep = verify(a.adapter, ADAPTERS[a.adapter], a.n, a.seed)
+        rep = verify(a.adapter, ADAPTERS[a.adapter], a.n, a.seed,
+                     generator=GENERATORS.get(a.adapter))
     except RuntimeError as e:
         print(f"darm-verify: {e}", file=sys.stderr)
         sys.exit(2)
