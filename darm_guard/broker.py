@@ -167,8 +167,13 @@ class Broker:
     """B1 brokerStep: parse -> normal-form check -> canonicalize -> kernel
     -> execute the same invocation if admitted -> audit."""
 
-    def __init__(self, cfg: BrokerConfig, kernel: KernelClient, audit: AuditLog):
+    def __init__(self, cfg: BrokerConfig, kernel: KernelClient, audit: AuditLog,
+                 intents=None, intents_path: Optional[str] = None):
         self.cfg, self.kernel, self.audit = cfg, kernel, audit
+        # E24: principal-held, single-use intents; None means intents are off
+        self.intents = list(intents) if intents is not None else None
+        self.intents_path = intents_path
+        self._lock = threading.Lock()
 
     def decide(self, obj, now=None):
         """Pure B1 brokerStep: no execution, no audit.
@@ -181,6 +186,8 @@ class Broker:
             if k in PATH_KEYS and not path_in_normal_form(v):
                 return None, tool, {"decision": "reject", "error": "path not in normal form"}
         inv = canonicalize(self.cfg, tool, args)
+        if self.intents is not None and tool not in self.intents:
+            return inv, tool, {"decision": "reject", "failure": "intent", "error": None}
         request = {"policy": self.cfg.policy,
                    "credential": {"tools": list(self.cfg.credential_tools),
                                   "expired": self.cfg.expired(now)},
@@ -191,7 +198,12 @@ class Broker:
         return inv, tool, {"decision": "admit"}
 
     def handle(self, obj) -> dict:
-        inv, tool, resp = self.decide(obj)
+        with self._lock:   # check and consume atomically: no double-spend
+            inv, tool, resp = self.decide(obj)
+            if resp["decision"] == "admit" and self.intents is not None:
+                self.intents.remove(tool)   # first occurrence, as List.erase
+                self._persist_intents()
+                resp = dict(resp, intent_consumed=tool)
         if resp["decision"] == "admit":
             result = _execute(self.cfg, inv)
             resp = dict(resp, executed="error" not in result, **result)
@@ -204,10 +216,18 @@ class Broker:
             "invocation_hash": invocation_hash(inv) if inv else None,
             "decision": response["decision"],
             "executed": response.get("executed", False),
+            "intent_consumed": response.get("intent_consumed"),
             "failure": response.get("failure"),
             "error": response.get("error"),
         })
         return response
+
+    def _persist_intents(self) -> None:
+        if self.intents_path:
+            tmp = self.intents_path + ".tmp"
+            with open(tmp, "w") as f:
+                f.write("".join(i + "\n" for i in self.intents))
+            os.replace(tmp, self.intents_path)
 
 
 # ---- Server -------------------------------------------------------------
@@ -228,13 +248,18 @@ class _Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     daemon_threads = True
 
 
+def load_intents(path: str) -> list:
+    return [line.strip() for line in open(path) if line.strip()]
+
+
 def serve(cfg: BrokerConfig, socket_path: str, audit_path: str,
-          kernel_path: Optional[str] = None) -> _Server:
+          kernel_path: Optional[str] = None, intents_path: Optional[str] = None) -> _Server:
     if os.path.exists(socket_path):
         os.remove(socket_path)
     srv = _Server(socket_path, _Handler)
     os.chmod(socket_path, 0o600)
-    srv.broker = Broker(cfg, KernelClient(kernel_path), AuditLog(audit_path))
+    srv.broker = Broker(cfg, KernelClient(kernel_path), AuditLog(audit_path),
+                        load_intents(intents_path) if intents_path else None, intents_path)
     return srv
 
 
@@ -246,9 +271,10 @@ def main() -> None:
     ap.add_argument("--registry", required=True, help="principal-registered values, one per line")
     ap.add_argument("--socket", default="/tmp/darm-broker.sock")
     ap.add_argument("--audit", default="darm-broker-audit.jsonl")
+    ap.add_argument("--intents", help="principal-held single-use intents, one tool per line (E24)")
     a = ap.parse_args()
     cfg = BrokerConfig.load(a.config, a.registry)
-    srv = serve(cfg, a.socket, a.audit)
+    srv = serve(cfg, a.socket, a.audit, intents_path=a.intents)
     cfg_hash, reg_hash = sha256_file(a.config), sha256_file(a.registry)
     srv.broker.audit.append({"event": "start", "config_sha256": cfg_hash,
                              "registry_sha256": reg_hash})
