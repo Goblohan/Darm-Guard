@@ -106,9 +106,19 @@ def _agentlock_scenario(rng) -> dict:
     return scenario(rng)
 
 
+def _airlock(req: dict) -> Verdict:
+    from .adapters.airlock_adapter import airlock_adapter
+    return airlock_adapter(req)
+
+
+def _airlock_scenario(rng) -> dict:
+    from .adapters.airlock_adapter import scenario
+    return scenario(rng)
+
+
 ADAPTERS = {"allow-all": allow_all, "darmguard-v0.1": darmguard_v01,
-            "agentlock": _agentlock}
-GENERATORS = {"agentlock": _agentlock_scenario}   # gate-specific scenario sets
+            "agentlock": _agentlock, "agent-airlock": _airlock}
+GENERATORS = {"agentlock": _agentlock_scenario, "agent-airlock": _airlock_scenario}   # gate-specific scenario sets
 
 
 # ---- Report ------------------------------------------------------------
