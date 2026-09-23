@@ -59,6 +59,8 @@ KernelGuard answers "is this authorized?" The broker makes the answer binding. I
 
 The config holds the policy, the credential's tools, the workspace directory, and optionally a credential lifetime (issued_at, ttl_seconds). The registry lists the values the principal vouches for, one per line, in a file the agent cannot write. A line ending in * is a pattern: /workspace/reports/* vouches for every value under that prefix, which gets provenance derived. A policy rule marked "payload": true (a file's content, say) must satisfy its rule but is not provenance-gated: the kernel proves payload cannot buy authority.
 
+**Intents (E24).** Started with --intents, the broker also requires a principal-held, single-use authorization for each kind of action: a file listing tool names, one per line, in a place the agent cannot write. Each admitted action consumes one; a rejected attempt keeps it; the file is rewritten so a restart cannot resurrect a spent authorization. The agent cannot supply a reason for acting: proposals have no such field, and E24 proves the claimed reason cannot affect the outcome. This closes a gap that per-argument provenance leaves open: content that manipulates *whether* the agent acts, using values the principal supplied.
+
 **Design rules.** Proposals are exactly {tool, args}: a proposal carrying any other field, such as a provenance label, is refused rather than ignored, and the broker assigns provenance itself. What the kernel decided is exactly what executes. Path arguments must be in normal form, because kernel prefix rules compare strings, and the real path is re-checked before touching disk. Responses report the kernel's decision separately from whether execution happened. Every decision goes to a hash-chained audit log, which starts with fingerprints of the config and registry.
 
 | Claim | Evidence |
@@ -66,11 +68,12 @@ The config holds the policy, the credential's tools, the workspace directory, an
 | Decision correctness | Kernel proved (K4, a conservative extension of K1, so K3's correspondence carries over); shipped binary kernel-v0.2.0 certified on 1,000 answers |
 | Decided = executed | Proved in darm-monitor B3BrokerModel, patterns and payload included; this broker certified against B3 on 2,000 kernel-checked facts, with coverage floors for every outcome, untrusted payload, and pattern-derived provenance |
 | Content cannot buy authority | Proved in K4 (payload_cannot_buy_authority); attack-tested: a registered value used as content cannot buy an unregistered path |
+| No action without the principal's intent | Proved in E24 (execution requires a registered, single-use intent; the agent's claimed reason is irrelevant); this broker certified against E24 on 300 three-step sequences; attack-tested: a hijacked third write is blocked |
 | The agent cannot vouch for itself | Proved in B1; enforced at the interface; attack-tested |
 | No other route to the effect | CI: an agent in a container with no network, a read-only filesystem, and only the broker socket reads and writes through the broker, and five bypass attempts fail (tests/confined_agent.py) |
 | The agent cannot change the rules | Config and registry fingerprints logged at startup; file permissions are the deployer's responsibility |
 
-**Limits.** Tools: read_file, list_dir, write_file. Registry patterns widen what the principal vouches for, and pattern breadth is the principal's responsibility. Payload is not checked for truth, harm, or sensitive data: information flow is out of scope. The mediation evidence covers the reference deployment only; any other deployment has to establish mediation itself, and a container escape is a failure of the isolation layer, not of DARM. The Python broker is certified against the model, not proved.
+**Limits.** Tools: read_file, list_dir, write_file. Registry patterns widen what the principal vouches for, and pattern breadth is the principal's responsibility. Payload is not checked for truth, harm, or sensitive data: information flow is out of scope. Without --intents, argument provenance alone does not address intent manipulation. Intents are per tool: an authorized intent does not fix which content is sent beyond what the policy's rules fix. The kernel's prefix rules compare strings and assume canonical input, which the broker supplies; the bare kernel alone would pass a traversal such as /ws/../etc. The mediation evidence covers the reference deployment only; any other deployment has to establish mediation itself, and a container escape is a failure of the isolation layer, not of DARM. The Python broker is certified against the model, not proved.
 
 ## DARM Verify (v0.4)
 
@@ -102,6 +105,8 @@ No false rejects. Every false admit matches a mechanism stated in darm-monitor's
         return Verdict(admitted, reason)
 
     print(verify("my-gate", my_gate, n=1000).summary())
+
+**Third-party adapters.** darm-verify includes adapters for AgentLock and Agent-Airlock, each probed against a specific release and translating only what the probes confirmed; scenarios a gate cannot express are declined with a reason rather than forced. Their results are shared with each project's maintainers before any publication.
 
 **Scope.** Divergences are measured against the kernel's semantics and against your adapter's translation of each scenario, so a divergence can mean a gap in the gate or a limit of the translation. The JSON report includes every scenario so a person can tell which. Scenarios are generated from a small vocabulary: they test decision logic, not real workloads. Verify requires the kernel (darm-guard-install-kernel) and stops if the kernel errors, rather than reporting without a referee.
 
@@ -198,8 +203,9 @@ The conditions behind each check are proved in [darm-monitor](https://github.com
 - v0.3 -- KernelGuard: invocation-level, provenance-aware, decisions computed by the Lean kernel.
 - v0.4 -- DARM Verify; proved kernel correspondence to E17, E18, and R22 (K3); kernel-checked certification of the shipped binary.
 - v0.5 -- DARM Broker for the filesystem domain (read-only): B1 model and certificates, credential lifetime, CI mediation tests.
-- v0.6 (this release) -- writes: registry patterns (B2a); role-aware kernel K4, where payload cannot buy authority; write_file; the complete broker model B3 with 2,000 certified facts; kernel-v0.2.0.
-- Next -- Verify adapters for third-party gates, published only with their maintainers' involvement; epistemic premise transfer (E24).
+- v0.6 -- writes: registry patterns (B2a); role-aware kernel K4, where payload cannot buy authority; write_file; the complete broker model B3 with 2,000 certified facts; kernel-v0.2.0.
+- v0.7 (this release) -- intents: E24 epistemic premise transfer and the single-use intent gate, certified against the broker; darm-verify adapters for AgentLock and Agent-Airlock.
+- Next -- publish third-party comparisons with their maintainers; a kernel-level treatment of paths; finer-grained intents.
 - Later -- credential-holding enforcement broker for one domain; gated credential expansion.
 
 ## License
