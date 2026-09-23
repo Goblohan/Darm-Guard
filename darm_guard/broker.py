@@ -42,16 +42,19 @@ class BrokerConfig:
     workspace: str                  # real directory behind /workspace/
     issued_at: Optional[datetime] = None   # credential lifetime start
     ttl_seconds: Optional[float] = None    # credential lifetime length
+    patterns: Tuple[str, ...] = ()         # registry prefixes: values yield 'derived'
 
     @staticmethod
     def load(config_path: str, registry_path: str) -> "BrokerConfig":
         cfg = json.load(open(config_path))
-        reg = [line.strip() for line in open(registry_path) if line.strip()]
+        lines = [line.strip() for line in open(registry_path) if line.strip()]
+        reg = [l for l in lines if not l.endswith("*")]
+        pats = tuple(l[:-1] for l in lines if l.endswith("*"))
         issued = cfg.get("issued_at")
         return BrokerConfig(cfg["policy"], tuple(cfg["credential_tools"]),
                             frozenset(reg), os.path.realpath(cfg["workspace"]),
                             datetime.fromisoformat(issued) if issued else None,
-                            cfg.get("ttl_seconds"))
+                            cfg.get("ttl_seconds"), pats)
 
     def expired(self, now: Optional[datetime] = None) -> bool:
         if self.issued_at is None or self.ttl_seconds is None:
@@ -84,15 +87,21 @@ def path_in_normal_form(value: str) -> bool:
             and ".." not in value.split("/"))
 
 
-def assign_prov(registry: frozenset, value: str) -> str:
-    """B1 assignProv: the broker, not the agent, decides provenance."""
-    return "authoritative" if value in registry else "untrusted"
+def assign_prov(registry: frozenset, value: str, patterns=()) -> str:
+    """B2a assignProv: the broker, not the agent, decides provenance.
+    Exact registered values are authoritative; values matching a
+    registered pattern are derived; anything else is untrusted."""
+    if value in registry:
+        return "authoritative"
+    if any(value.startswith(p) for p in patterns):
+        return "derived"
+    return "untrusted"
 
 
 def canonicalize(cfg: BrokerConfig, tool: str, args) -> dict:
     """B1 canonicalize: one invocation, provenance assigned by the broker."""
     return {"tool": tool,
-            "args": [{"key": k, "value": v, "prov": assign_prov(cfg.registry, v)}
+            "args": [{"key": k, "value": v, "prov": assign_prov(cfg.registry, v, cfg.patterns)}
                      for k, v in args]}
 
 
@@ -142,6 +151,11 @@ def _execute(cfg: BrokerConfig, inv: dict) -> dict:
         if inv["tool"] == "read_file":
             with open(real) as f:
                 return {"content": f.read()}
+        if inv["tool"] == "write_file":
+            content = args.get("content", "")
+            with open(real, "w") as f:
+                f.write(content)
+            return {"written": len(content)}
         if inv["tool"] == "list_dir":
             return {"entries": sorted(os.listdir(real))}
     except OSError as e:

@@ -31,6 +31,18 @@ CASES = [
      lambda r: r["decision"] == "reject" and r.get("failure") == "observation"),
     ("list registered dir", lambda: c.propose("list_dir", {"path": "/workspace/docs"}),
      lambda r: r["decision"] == "admit" and "entries" in r),
+    ("agent writes report: derived path, untrusted content",
+     lambda: c.propose("write_file", {"path": "/workspace/reports/q3.md", "content": "Q3 summary"}),
+     lambda r: r["decision"] == "admit" and r.get("executed") is True),
+    ("written report readable via derived path",
+     lambda: c.propose("read_file", {"path": "/workspace/reports/q3.md"}),
+     lambda r: r.get("content") == "Q3 summary"),
+    ("write outside every pattern rejected",
+     lambda: c.propose("write_file", {"path": "/workspace/other.txt", "content": "x"}),
+     lambda r: r["decision"] == "reject" and r.get("failure") == "provenance"),
+    ("content cannot buy authority",
+     lambda: c.propose("write_file", {"path": "/workspace/other.txt", "content": "/workspace/notes.txt"}),
+     lambda r: r["decision"] == "reject" and r.get("failure") == "provenance"),
 ]
 
 passed = 0
