@@ -32,6 +32,10 @@ r = propose("read_file", {"path": "/workspace/notes.txt"})
 check("broker route works: registered read", r.get("executed") is True and "hello" in r.get("content", ""))
 r = propose("read_file", {"path": "/workspace/invented.txt"})
 check("broker still enforces: invented path rejected", r.get("decision") == "reject")
+r = propose("write_file", {"path": "/workspace/reports/ci.md", "content": "written by confined agent"})
+check("broker route works: write under registered pattern", r.get("executed") is True)
+r = propose("read_file", {"path": "/workspace/reports/ci.md"})
+check("broker read-back of the written file", r.get("content") == "written by confined agent")
 
 check("bypass blocked: direct read of workspace file",
       fails(lambda: open("/tmp/darmdemo/workspace/notes.txt").read()))

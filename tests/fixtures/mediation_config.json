@@ -1,4 +1,6 @@
 {"policy": {"tools": [
-   {"tool": "read_file", "rules": [{"key": "path", "allowedValues": [], "allowedPrefixes": ["/workspace/"]}]}]},
- "credential_tools": ["read_file"],
+   {"tool": "read_file",  "rules": [{"key": "path", "allowedValues": [], "allowedPrefixes": ["/workspace/"]}]},
+   {"tool": "write_file", "rules": [{"key": "path", "allowedValues": [], "allowedPrefixes": ["/workspace/"]},
+                                    {"key": "content", "allowedValues": [], "allowedPrefixes": [""], "payload": true}]}]},
+ "credential_tools": ["read_file", "write_file"],
  "workspace": "/tmp/darmdemo/workspace"}

@@ -26,7 +26,7 @@ jobs:
 
       - name: Prepare files outside the agent's reach
         run: |
-          mkdir -p /tmp/darmdemo/workspace /tmp/darm-sock
+          mkdir -p /tmp/darmdemo/workspace/reports /tmp/darm-sock
           echo "hello from notes" > /tmp/darmdemo/workspace/notes.txt
           echo "TOP SECRET" > /tmp/darmdemo/secret.txt
 
