@@ -1,0 +1,46 @@
+name: Mediation (A2) bypass tests
+
+# Evidence that in this reference deployment the broker is the only route
+# to the governed effect. Not a proof for other deployments; a container
+# escape would be a failure of the isolation layer, not of DARM.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  bypass:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install darm-guard and the pinned kernel
+        run: |
+          pip install -e .
+          darm-guard-install-kernel
+
+      - name: Prepare files outside the agent's reach
+        run: |
+          mkdir -p /tmp/darmdemo/workspace /tmp/darm-sock
+          echo "hello from notes" > /tmp/darmdemo/workspace/notes.txt
+          echo "TOP SECRET" > /tmp/darmdemo/secret.txt
+
+      - name: Broker on host; agent confined to the broker socket
+        run: |
+          darm-broker --config tests/fixtures/mediation_config.json \
+            --registry tests/fixtures/mediation_registry.txt \
+            --socket /tmp/darm-sock/broker.sock --audit /tmp/darmdemo/audit.jsonl &
+          sleep 3
+          docker run --rm --network none --read-only \
+            --user "$(id -u):$(id -g)" \
+            -v /tmp/darm-sock:/sock \
+            -v "$PWD/tests/confined_agent.py:/agent.py:ro" \
+            python:3.12-slim python /agent.py
+
+      - name: Audit chain intact
+        run: python tests/verify_audit.py /tmp/darmdemo/audit.jsonl

@@ -1,0 +1,4 @@
+{"policy": {"tools": [
+   {"tool": "read_file", "rules": [{"key": "path", "allowedValues": [], "allowedPrefixes": ["/workspace/"]}]}]},
+ "credential_tools": ["read_file"],
+ "workspace": "/tmp/darmdemo/workspace"}
