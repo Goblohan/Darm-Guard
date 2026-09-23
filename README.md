@@ -24,7 +24,7 @@ An agent tool-authorization guard, grounded in a machine-checked Lean 4 theory o
 
 ## Kernel-backed guard (v0.3, recommended)
 
-KernelGuard checks the tool, its arguments, and where each argument came from. Every allow/deny decision is computed by the DARM decision kernel: a Lean 4 function with machine-checked properties (darm-monitor K1DecisionKernel), compiled to a native binary (K2DecisionServer). The Python side only formats requests.
+KernelGuard checks the tool, its arguments, and where each argument came from. Every allow/deny decision is computed by the DARM decision kernel: a Lean 4 function with machine-checked properties (darm-monitor K4RoleKernel, which decides exactly as K1DecisionKernel on policies without payload rules), compiled to a native binary (K4DecisionServer). The Python side only formats requests.
 
     from darm_guard import KernelGuard, KernelPolicy, ToolRule, ArgRule
 
@@ -43,11 +43,11 @@ KernelGuard checks the tool, its arguments, and where each argument came from. E
 
 Proved about the kernel's decision function: an admitted invocation passed all five checks, and an expired credential, a tool outside the credential, or any untrusted argument value can never be admitted.
 
-**Install the kernel.** After pip install darm-guard, run darm-guard-install-kernel. It downloads the kernel binary that darm-monitor's CI built from tag kernel-v0.1.0 and installs it only if its SHA-256 matches the value pinned in this package. Linux x86_64 only; elsewhere, build it with lake build darmkernel and set DARM_KERNEL_PATH. Kernels are never downloaded during an authorization check.
+**Install the kernel.** After pip install darm-guard, run darm-guard-install-kernel. It downloads the kernel binary that darm-monitor's CI built from tag kernel-v0.2.0 and installs it only if its SHA-256 matches the value pinned in this package. Linux x86_64 only; elsewhere, build it with lake build darmkernel and set DARM_KERNEL_PATH. Kernels are never downloaded during an authorization check.
 
 **Limits.** Not proved: this Python module, JSON encoding, argument-to-string conversion, expiry computation, the kernel's JSON parser and I/O loop, and the Lean compiler. The guard fails closed if the kernel is missing, crashes, or times out. Provenance labels come from the caller; the guard does not infer lineage.
 
-## DARM Broker (v0.5): the enforcement point
+## DARM Broker: the enforcement point
 
 KernelGuard answers "is this authorized?" The broker makes the answer binding. It is a separate process that holds the tools and their credentials; the agent holds only a socket and can only propose. The broker builds one canonical invocation, asks the kernel, and executes that same invocation only if admitted.
 
@@ -57,19 +57,20 @@ KernelGuard answers "is this authorized?" The broker makes the answer binding. I
     agent = BrokerClient("/tmp/darm-broker.sock")
     agent.propose("read_file", {"path": "/workspace/notes.txt"})
 
-The config holds the policy, the credential's tools, the workspace directory, and optionally a credential lifetime (issued_at, ttl_seconds). The registry lists the values the principal vouches for, one per line, in a file the agent cannot write.
+The config holds the policy, the credential's tools, the workspace directory, and optionally a credential lifetime (issued_at, ttl_seconds). The registry lists the values the principal vouches for, one per line, in a file the agent cannot write. A line ending in * is a pattern: /workspace/reports/* vouches for every value under that prefix, which gets provenance derived. A policy rule marked "payload": true (a file's content, say) must satisfy its rule but is not provenance-gated: the kernel proves payload cannot buy authority.
 
 **Design rules.** Proposals are exactly {tool, args}: a proposal carrying any other field, such as a provenance label, is refused rather than ignored, and the broker assigns provenance itself. What the kernel decided is exactly what executes. Path arguments must be in normal form, because kernel prefix rules compare strings, and the real path is re-checked before touching disk. Responses report the kernel's decision separately from whether execution happened. Every decision goes to a hash-chained audit log, which starts with fingerprints of the config and registry.
 
 | Claim | Evidence |
 |---|---|
-| Decision correctness | Kernel proved (K1, K3); shipped binary certified on 1,000 answers |
-| Decided = executed | Proved in darm-monitor B1BrokerModel; this broker certified against B1 on 1,000 kernel-checked facts, every outcome including expiry |
+| Decision correctness | Kernel proved (K4, a conservative extension of K1, so K3's correspondence carries over); shipped binary kernel-v0.2.0 certified on 1,000 answers |
+| Decided = executed | Proved in darm-monitor B3BrokerModel, patterns and payload included; this broker certified against B3 on 2,000 kernel-checked facts, with coverage floors for every outcome, untrusted payload, and pattern-derived provenance |
+| Content cannot buy authority | Proved in K4 (payload_cannot_buy_authority); attack-tested: a registered value used as content cannot buy an unregistered path |
 | The agent cannot vouch for itself | Proved in B1; enforced at the interface; attack-tested |
-| No other route to the effect | CI: an agent in a container with no network, a read-only filesystem, and only the broker socket reaches the file through the broker, and five bypass attempts fail (tests/confined_agent.py) |
+| No other route to the effect | CI: an agent in a container with no network, a read-only filesystem, and only the broker socket reads and writes through the broker, and five bypass attempts fail (tests/confined_agent.py) |
 | The agent cannot change the rules | Config and registry fingerprints logged at startup; file permissions are the deployer's responsibility |
 
-**Limits.** Read-only tools only (read_file, list_dir): writes need a design for derived provenance, since contents the agent composes are never registered. Exact-value registration is strict: the agent cannot compose a new value, even one the policy allows. The mediation evidence covers the reference deployment only; any other deployment has to establish mediation itself, and a container escape is a failure of the isolation layer, not of DARM. The Python broker is certified against the model, not proved.
+**Limits.** Tools: read_file, list_dir, write_file. Registry patterns widen what the principal vouches for, and pattern breadth is the principal's responsibility. Payload is not checked for truth, harm, or sensitive data: information flow is out of scope. The mediation evidence covers the reference deployment only; any other deployment has to establish mediation itself, and a container escape is a failure of the isolation layer, not of DARM. The Python broker is certified against the model, not proved.
 
 ## DARM Verify (v0.4)
 
@@ -126,8 +127,8 @@ Each layer's claim is weaker than the one above it, and none inherits another's.
 |---|---|---|---|
 | S1 Obligations | ODATS necessity, conservation, IC1/R22 correspondence | Lean proofs, CI-audited (darm-monitor) | Anything about a specific implementation |
 | S2 Kernel | kernelDecide's own properties: admission soundness; expired, uncredentialed, or untrusted invocations never admitted | Lean proofs, kernel-checked (K1); correspondence to S1 proved in K3a/K3b: exact agreement with E17's gate, admission-level agreement with E18 ODATS, sound refinement of R22 for every invocation (no false admits; complete on the governed tool) | E15's causal lift (rests on TMC); E18 diagnosis order (kernel T-first, E18 O-first); domain completeness, which the kernel assumes rather than checks |
-| S3 Binary | Built by CI from the tagged, verified commit; SHA-256 pinned in this package; 1,000 of its answers (all six outcomes, at least 10 each) confirmed by Lean's kernel evaluating kernelDecide | Provenance, tests, and kernel-checked differential certificates | Correct compilation in general: certificates cover sampled inputs only; the JSON parser, I/O loop, and Lean compiler remain trusted |
-| S4 Runtime | KernelGuard asks the kernel for every decision and fails closed; the broker (v0.5) holds the tools, assigns provenance itself, and executes only what the kernel admitted | Tests; broker certified against the B1 model; CI bypass tests in the reference deployment | For KernelGuard alone: complete mediation, and caller-supplied provenance. For the broker: mediation outside the reference deployment, and config file permissions |
+| S3 Binary | Built by CI from the tagged, verified commit; SHA-256 pinned in this package; 1,000 of its answers (every outcome, and admitted untrusted payload, at least 10 each) confirmed by Lean's kernel evaluating K4's kernelDecide | Provenance, tests, and kernel-checked differential certificates | Correct compilation in general: certificates cover sampled inputs only; the JSON parser, I/O loop, and Lean compiler remain trusted |
+| S4 Runtime | KernelGuard asks the kernel for every decision and fails closed; the broker holds the tools, assigns provenance itself, and executes only what the kernel admitted | Tests; broker certified against the B1 model; CI bypass tests in the reference deployment | For KernelGuard alone: complete mediation, and caller-supplied provenance. For the broker: mediation outside the reference deployment, and config file permissions |
 | S5 World | Nothing | -- | Physical safety: an explicit assumption (TMC), not a result |
 
 ## What is and is not guaranteed
@@ -196,8 +197,9 @@ The conditions behind each check are proved in [darm-monitor](https://github.com
 
 - v0.3 -- KernelGuard: invocation-level, provenance-aware, decisions computed by the Lean kernel.
 - v0.4 -- DARM Verify; proved kernel correspondence to E17, E18, and R22 (K3); kernel-checked certification of the shipped binary.
-- v0.5 (this release) -- DARM Broker for the filesystem domain (read-only): B1 model and certificates, credential lifetime, CI mediation tests.
-- Next -- derived provenance, so the broker can govern writes; Verify adapters for third-party gates, published only with their maintainers' involvement; epistemic premise transfer (E24).
+- v0.5 -- DARM Broker for the filesystem domain (read-only): B1 model and certificates, credential lifetime, CI mediation tests.
+- v0.6 (this release) -- writes: registry patterns (B2a); role-aware kernel K4, where payload cannot buy authority; write_file; the complete broker model B3 with 2,000 certified facts; kernel-v0.2.0.
+- Next -- Verify adapters for third-party gates, published only with their maintainers' involvement; epistemic premise transfer (E24).
 - Later -- credential-holding enforcement broker for one domain; gated credential expansion.
 
 ## License

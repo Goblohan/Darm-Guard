@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "darm-guard"
-version = "0.5.0"
+version = "0.6.0"
 description = "Agent tool-authorization guard grounded in a machine-checked Lean 4 theory"
 authors = [{name = "Olusanya Gbolahan V"}]
 requires-python = ">=3.9"
