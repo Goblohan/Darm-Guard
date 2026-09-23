@@ -144,27 +144,31 @@ class Broker:
     def __init__(self, cfg: BrokerConfig, kernel: KernelClient, audit: AuditLog):
         self.cfg, self.kernel, self.audit = cfg, kernel, audit
 
-    def handle(self, obj) -> dict:
+    def decide(self, obj):
+        """Pure B1 brokerStep: no execution, no audit.
+        Returns (canonical invocation or None, tool or None, response)."""
         parsed = parse_proposal(obj)
         if parsed is None:
-            return self._record(None, None,
-                                {"decision": "reject", "error": "malformed proposal"})
+            return None, None, {"decision": "reject", "error": "malformed proposal"}
         tool, args = parsed
         for k, v in args:
             if k in PATH_KEYS and not path_in_normal_form(v):
-                return self._record(None, tool,
-                                    {"decision": "reject", "error": "path not in normal form"})
+                return None, tool, {"decision": "reject", "error": "path not in normal form"}
         inv = canonicalize(self.cfg, tool, args)
         request = {"policy": self.cfg.policy,
                    "credential": {"tools": list(self.cfg.credential_tools), "expired": False},
                    "invocation": inv}
         d = self.kernel.decide(request)
         if not d.admitted:
-            return self._record(inv, tool, {"decision": "reject",
-                                            "failure": d.failure, "error": d.error})
-        result = _execute(self.cfg, inv)
-        return self._record(inv, tool, {"decision": "admit",
-                                        "executed": "error" not in result, **result})
+            return inv, tool, {"decision": "reject", "failure": d.failure, "error": d.error}
+        return inv, tool, {"decision": "admit"}
+
+    def handle(self, obj) -> dict:
+        inv, tool, resp = self.decide(obj)
+        if resp["decision"] == "admit":
+            result = _execute(self.cfg, inv)
+            resp = dict(resp, executed="error" not in result, **result)
+        return self._record(inv, tool, resp)
 
     def _record(self, inv, tool, response: dict) -> dict:
         self.audit.append({
