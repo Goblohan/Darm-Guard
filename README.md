@@ -47,6 +47,39 @@ Proved about the kernel's decision function: an admitted invocation passed all f
 
 **Limits.** Not proved: this Python module, JSON encoding, argument-to-string conversion, expiry computation, the kernel's JSON parser and I/O loop, and the Lean compiler. The guard fails closed if the kernel is missing, crashes, or times out. Provenance labels come from the caller; the guard does not infer lineage.
 
+## DARM Verify (v0.4)
+
+Check any authorization gate against the DARM kernel. Wrap the gate in an adapter, a function from a DARM request to a Verdict. Verify runs seeded scenarios through both the gate and the kernel and reports every disagreement:
+
+- **false admit**: the gate allows what the kernel rejects, labeled with the kernel's reason (T, O, A, S, or P)
+- **false reject**: the gate blocks what the kernel admits
+
+    darm-verify --adapter darmguard-v0.1 --n 1000 --json report.json
+
+**Worked example: DARM Guard's own v0.1**, 1,000 scenarios, seed 20260922:
+
+| Kernel's reason | False admits | Mechanism |
+|---|---|---|
+| Authority | 196 | tool in policy but not in credential: v0.1 admits the union |
+| Observation | 101 | tool in credential but not in policy: the same union |
+| Semantic | 169 | v0.1 never sees arguments (R22) |
+| Provenance | 21 | v0.1 never sees provenance |
+| Temporal | 0 | v0.1 checks expiry |
+
+No false rejects. Every false admit matches a mechanism stated in darm-monitor's formalization of v0.1 (IC1RuntimeSemantics, R22), checked case by case against the saved report.
+
+**Writing an adapter for your own gate:**
+
+    from darm_guard.verify import verify, Verdict
+
+    def my_gate(req):     # req has "policy", "credential", "invocation"
+        ...               # translate req into your gate's terms and ask it
+        return Verdict(admitted, reason)
+
+    print(verify("my-gate", my_gate, n=1000).summary())
+
+**Scope.** Divergences are measured against the kernel's semantics and against your adapter's translation of each scenario, so a divergence can mean a gap in the gate or a limit of the translation. The JSON report includes every scenario so a person can tell which. Scenarios are generated from a small vocabulary: they test decision logic, not real workloads. Verify requires the kernel (darm-guard-install-kernel) and stops if the kernel errors, rather than reporting without a referee.
+
 ## Three Modes
 
 **OBSERVE (default)** -- logs and classifies every call. Never blocks. Prints a warning saying so.
@@ -137,8 +170,9 @@ The conditions behind each check are proved in [darm-monitor](https://github.com
 
 ## Roadmap
 
-- v0.3 (this release) -- KernelGuard: invocation-level, provenance-aware, decisions computed by the Lean kernel.
-- Next -- K3: prove the kernel's correspondence to the R22, E17, and E18 obligations (S2 to S1); differential testing of the binary against Lean's own evaluation (strengthens S3); DARM Verify, conformance testing of other gates against the kernel.
+- v0.3 -- KernelGuard: invocation-level, provenance-aware, decisions computed by the Lean kernel.
+- v0.4 (this release) -- DARM Verify; proved kernel correspondence to E17, E18, and R22 (K3); kernel-checked certification of the shipped binary.
+- Next -- Verify adapters for third-party gates, published only with their maintainers' involvement; epistemic premise transfer (E24); an enforcement broker for one domain.
 - Later -- credential-holding enforcement broker for one domain; gated credential expansion.
 
 ## License
