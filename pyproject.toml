@@ -21,3 +21,4 @@ include = ["darm_guard*"]
 
 [project.scripts]
 darm-guard-install-kernel = "darm_guard.install:main"
+darm-verify = "darm_guard.verify:main"
