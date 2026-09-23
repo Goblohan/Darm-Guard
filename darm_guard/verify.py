@@ -28,6 +28,7 @@ from .kernel import KernelClient
 class Verdict:
     admitted: bool
     reason: Optional[str] = None
+    supported: bool = True   # False: the gate cannot express this scenario
 
 
 Adapter = Callable[[dict], Verdict]
@@ -115,6 +116,7 @@ class Report:
     n: int
     seed: int
     agree: int = 0
+    unsupported: Counter = field(default_factory=Counter)
     divergences: List[Divergence] = field(default_factory=list)
 
     def summary(self) -> str:
@@ -123,6 +125,9 @@ class Report:
         out = [f"DARM Verify: {self.adapter} vs DARM kernel "
                f"({self.n} scenarios, seed {self.seed})",
                f"  agree           {self.agree}",
+               f"  not expressible {sum(self.unsupported.values())}   (excluded from comparison)"]
+        out += [f"      reason: {k}  {v}" for k, v in sorted(self.unsupported.items())]
+        out += [
                f"  false admits    {sum(fa.values())}   (gate admits, kernel rejects)"]
         out += [f"      kernel: {k:12s} {v}" for k, v in sorted(fa.items())]
         out.append(f"  false rejects   {sum(fr.values())}   (gate rejects, kernel admits)")
@@ -132,6 +137,7 @@ class Report:
     def to_json(self) -> str:
         return json.dumps({"adapter": self.adapter, "n": self.n, "seed": self.seed,
                            "agree": self.agree,
+                           "not_expressible": dict(self.unsupported),
                            "divergences": [asdict(d) for d in self.divergences]}, indent=2)
 
 
@@ -144,10 +150,13 @@ def verify(name: str, adapter: Adapter, n: int = 1000, seed: int = 20260922,
     kernel = kernel or KernelClient()
     rep = Report(name, n, seed)
     for i, req in enumerate(scenarios(n, seed)):
+        g = adapter(req)
+        if not g.supported:
+            rep.unsupported[g.reason or "unspecified"] += 1
+            continue
         k = kernel.decide(req)
         if k.error:
             raise RuntimeError(f"kernel error on scenario {i}: {k.error}")
-        g = adapter(req)
         if g.admitted == k.admitted:
             rep.agree += 1
             continue
