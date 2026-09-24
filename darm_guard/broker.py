@@ -455,8 +455,9 @@ def _basis(resp: dict) -> list:
               ["DARM.EffectIntegrity.writes_honest", "DARM.EffectIntegrity.tamper_detected",
                "DARM.EffectIntegrity.truncation_detected"], ["A2: the attestation key is secret"])
     if eff == "already_applied":
-        claim("already applied: this retry did not repeat the effect",
-              ["DARM.EffectIntegrity.cas_retry_idempotent"], ["A5"])
+        claim("already applied: this retry performed no effect (the idempotency key short-circuited it)",
+              ["DARM.Idempotency.at_most_once", "DARM.Idempotency.keyed_repeat_no_effect"],
+              ["A5", "pending keys after a crash are closed by startup reconciliation: tested, not modelled"])
     if eff == "unknown":
         claim("effect unknown: the log shows it started; reconcile before retrying",
               ["DARM.Lifecycle.no_silent_effect_ever"], ["A3"])

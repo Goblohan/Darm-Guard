@@ -18,7 +18,8 @@ Every guarantee below rests on stated assumptions, and every assumption has a st
 | No action without a principal-held, single-use intent | E24 | Certified on 300 sequences |
 | A durable record precedes every effect; no effect reads as "none" | B4 | Evidence tests |
 | Reconciliation reports state correspondence, never causation | B5 | Probe P3 |
-| Writes apply only from the recorded state; conflicts leave the foreign state intact; retries cannot double an effect | B6 | Probes P2, P7 |
+| Writes apply only from the recorded state; conflicts leave the foreign state intact | B6 | Probe P2 |
+| A keyed request, submitted any number of times, performs exactly one effect | B7 | Probe P7 |
 | A governed file changed outside the broker, or a dropped log entry whose file survives, is detected | B6 | Probes P8, P9; CI canary |
 | A path cannot be redirected between check and use | By construction (handle walk, no symlinks followed) | Probes P1a, P1b; not modeled formally |
 
@@ -62,6 +63,7 @@ Every guarantee below rests on stated assumptions, and every assumption has a st
 - **Key rotation.** A file attested under any key other than the current one is indistinguishable from a forgery, so reinstalling the broker or rotating its key makes previously governed files report "attestation forged or moved" until they are re-attested. A key ring (old keys kept for verification only) is not implemented.
 - **Effect-free truncation.** Dropped log entries are detected only when the governed file they describe survives; an effect-free tail needs an external checkpoint, which is not implemented.
 - **Timing of authority.** Credential expiry is checked at decision time, not when the effect completes; in-flight requests cannot be revoked.
+- **Retries without a key.** A retry that carries no idempotency key performs the write again. It lands in the same state, so it is harmless for writes, but it is a second effect; non-repetition holds only for keyed requests (B7). B6's cas_retry_idempotent is a final-state property and does not establish it.
 - **Granularity.** Intents are per tool, not per resource or content; there is no delegation or attenuation model.
 - **Availability.** A 1 MB request limit and a backlog of 64; a 100-client burst is tested (probe P10). No stronger availability guarantee.
 - **Evidence basis.** The check that cited theorems exist matches names, not meanings; that each theorem supports its claim is established by review.
