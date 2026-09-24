@@ -77,6 +77,60 @@ def sha256_file(path: str) -> str:
     return hashlib.sha256(open(path, "rb").read()).hexdigest()
 
 
+def _target_state(path: str):
+    """Observe a filesystem target for B5 reconciliation.
+
+    Returns:
+      ("absent", None) when the target does not exist.
+      ("present", sha256) when the target is a regular file.
+      ("unavailable", error) when the target cannot be observed safely.
+    """
+    try:
+        st = os.stat(path)
+    except FileNotFoundError:
+        return ("absent", None)
+    except OSError as e:
+        return ("unavailable", f"{type(e).__name__}: {e}")
+
+    if not os.path.isfile(path):
+        return ("unavailable", "target is not a regular file")
+
+    try:
+        return ("present", sha256_file(path))
+    except OSError as e:
+        return ("unavailable", f"{type(e).__name__}: {e}")
+
+
+def _intended_state(inv: dict):
+    """Derive the B5 intended target state from the frozen invocation.
+
+    Currently defined only for write_file. The intended content comes from
+    the canonical invocation, never from the post-effect filesystem state.
+    """
+    if inv.get("tool") != "write_file":
+        return None
+
+    args = {a["key"]: a["value"] for a in inv["args"]}
+    path = args.get("path")
+    content = args.get("content")
+
+    if not isinstance(path, str) or not isinstance(content, str):
+        return None
+
+    return ("present", hashlib.sha256(content.encode()).hexdigest())
+
+
+def _reconcile(before, intended, observed):
+    """Classify observed target state against the B5 receipt."""
+    if observed[0] == "unavailable":
+        return "unresolved"
+    if intended is not None and observed == intended:
+        return "confirmedSuccess"
+    if before is not None and before != intended and observed == before:
+        return "confirmedFailure"
+    return "unresolved"
+
+
 def parse_proposal(obj) -> Optional[Tuple[str, List[Tuple[str, str]]]]:
     """Accept exactly {"tool": str, "args": [[str, str], ...]}; anything else is None."""
     if not isinstance(obj, dict) or set(obj) != {"tool", "args"}:
@@ -243,6 +297,23 @@ class Broker:
                 except Exception:
                     resp["evidence"] = "unrecorded"
                 return resp
+            intended = _intended_state(inv)
+            before = None
+            real = None
+            if intended is not None:
+                args = {a["key"]: a["value"] for a in inv["args"]}
+                real = _real_in_workspace(self.cfg, args.get("path", ""))
+                before = (
+                    _target_state(real)
+                    if real is not None
+                    else ("unavailable", "path outside workspace")
+                )
+                resp = dict(
+                    resp,
+                    before_state=before,
+                    intended_state=intended,
+                )
+
             try:
                 self._record(rid, "prepared", inv, tool, resp)
             except Exception as e:
@@ -252,10 +323,27 @@ class Broker:
                 self.intents.remove(tool)
                 self._persist_intents()
                 resp = dict(resp, intent_consumed=tool)
+
         result = _execute(self.cfg, inv)
         ok = "error" not in result
-        resp = dict(resp, request_id=rid, executed=ok,
-                    effect="succeeded" if ok else "failed", **result)
+
+        response_fields = dict(
+            request_id=rid,
+            executed=ok,
+            effect="succeeded" if ok else "failed",
+            **result,
+        )
+
+        if intended is not None:
+            observed = _target_state(real) if real is not None else ("unavailable", "path outside workspace")
+            response_fields["reconciliation"] = _reconcile(
+                before, intended, observed
+            )
+            response_fields["before_state"] = before
+            response_fields["intended_state"] = intended
+            response_fields["observed_state"] = observed
+
+        resp = dict(resp, **response_fields)
         try:
             self._record(rid, "outcome", inv, tool, resp)
             resp["evidence"] = "recorded"
@@ -273,6 +361,10 @@ class Broker:
             "effect": response.get("effect"),
             "executed": response.get("executed", False),
             "intent_consumed": response.get("intent_consumed"),
+            "reconciliation": response.get("reconciliation"),
+            "before_state": response.get("before_state"),
+            "intended_state": response.get("intended_state"),
+            "observed_state": response.get("observed_state"),
             "failure": response.get("failure"),
             "error": response.get("error"),
         })
