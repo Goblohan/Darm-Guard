@@ -20,6 +20,7 @@ the kernel sees them, and re-checks the real path before touching disk.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import socket
@@ -290,6 +291,27 @@ def _leaf_state(pfd: int, leaf: str):
     return ("present", _digest_at(pfd, leaf))
 
 
+XATTR = "user.darm"
+
+
+def _attestation(key: bytes, rid: str, target: str, digest: str) -> bytes:
+    """What a governed file carries (Phase 3: the world points at the log):
+    the request that wrote it, and a MAC only the broker's key can produce."""
+    mac = hmac.new(key, f"{rid}|{target}|{digest}".encode(), hashlib.sha256).hexdigest()
+    return json.dumps({"rid": rid, "target": target, "digest": digest, "mac": mac},
+                      sort_keys=True).encode()
+
+
+def _check_attestation(key: bytes, raw: bytes):
+    try:
+        a = json.loads(raw)
+        mac = hmac.new(key, f"{a['rid']}|{a['target']}|{a['digest']}".encode(),
+                       hashlib.sha256).hexdigest()
+        return a if hmac.compare_digest(mac, a.get("mac", "")) else None
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
 def _open_parent(cfg: BrokerConfig, path: str):
     """Race-free resolution (fixes probe P1): open the workspace, then each
     directory on the path relative to the previous handle, never following
@@ -341,7 +363,7 @@ def _observe(cfg: BrokerConfig, path: str):
         os.close(pfd)
 
 
-def _execute(cfg: BrokerConfig, inv: dict, expected=None) -> dict:
+def _execute(cfg: BrokerConfig, inv: dict, expected=None, attest=None) -> dict:
     """Run an admitted invocation through handles pinned at resolution time."""
     args = {a["key"]: a["value"] for a in inv["args"]}
     opened = _open_parent(cfg, args.get("path", ""))
@@ -363,12 +385,20 @@ def _execute(cfg: BrokerConfig, inv: dict, expected=None) -> dict:
             with os.fdopen(fd, "w") as f:
                 f.write(content)
                 f.flush()
+                attested = False
+                if attest is not None:
+                    try:
+                        os.setxattr(f.fileno(), XATTR, _attestation(
+                            *attest, hashlib.sha256(content.encode()).hexdigest()))
+                        attested = True
+                    except OSError:
+                        attested = False   # filesystem without user xattrs
                 os.fsync(f.fileno())
             conflict = _cas_replace(pfd, tmp, leaf, expected)
             if conflict:
                 return {"error": conflict, "conflict": True}
             os.fsync(pfd)
-            return {"written": len(content)}
+            return {"written": len(content), "attested": attested}
         if inv["tool"] == "list_dir":
             fd = os.open(leaf, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=pfd)
             try:
@@ -386,13 +416,15 @@ class Broker:
     -> execute the same invocation if admitted -> audit."""
 
     def __init__(self, cfg: BrokerConfig, kernel: KernelClient, audit: AuditLog,
-                 intents=None, intents_path: Optional[str] = None):
+                 intents=None, intents_path: Optional[str] = None,
+                 key: Optional[bytes] = None):
         self.cfg, self.kernel, self.audit = cfg, kernel, audit
         # E24: principal-held, single-use intents; None means intents are off
         self.intents = list(intents) if intents is not None else None
         self.intents_path = intents_path
         self._lock = threading.Lock()
         self._keys = {}   # idempotency key -> {rid, hash, state, effect}
+        self.key = key
 
     def decide(self, obj, now=None):
         """Pure B1 brokerStep: no execution, no audit.
@@ -502,7 +534,8 @@ class Broker:
                 self._persist_intents()
                 resp = dict(resp, intent_consumed=tool)
 
-        result = _execute(self.cfg, inv, before)
+        result = _execute(self.cfg, inv, before,
+                          (self.key, rid, real) if self.key and intended is not None else None)
         ok = "error" not in result
 
         response_fields = dict(
@@ -648,6 +681,56 @@ def load_intents(path: str) -> list:
     return [line.strip() for line in open(path) if line.strip()]
 
 
+def verify_world(cfg: BrokerConfig, audit_path: str, key: bytes) -> dict:
+    """Check the world against the log in both directions (Phase 3; probes P8, P9).
+    world -> log: each attested file needs a valid MAC for its path, content
+    matching its attested digest, and its request present in the log.
+    log -> world: each target's latest successful logged write must be the
+    one its file attests, and must still exist. Files the broker never wrote
+    are not governed and not reported. Limits: filesystems without user
+    xattrs carry no attestations; truncation is detectable only for requests
+    whose files survive (an effect-free tail needs an external checkpoint)."""
+    findings, latest, logged = [], {}, set()
+    for line in open(audit_path):
+        if not line.strip():
+            continue
+        e = json.loads(line)
+        logged.add(e.get("request_id"))
+        if e.get("event") in ("outcome", "reconciled") and e.get("target") and (
+                e.get("effect") == "succeeded" or e.get("reconciliation") == "confirmedSuccess"):
+            latest[e["target"]] = e["request_id"]
+    root = cfg.workspace
+    for dirpath, _dirs, files in os.walk(root, followlinks=False):
+        for name in files:
+            real = os.path.join(dirpath, name)
+            if os.path.islink(real) or ".darm-tmp-" in name:
+                continue
+            logical = LOGICAL_ROOT + os.path.relpath(real, root)
+            try:
+                raw = os.getxattr(real, XATTR, follow_symlinks=False)
+            except OSError:
+                if logical in latest:
+                    findings.append({"target": logical, "finding":
+                        "the log records a broker write here but the file carries no attestation"})
+                continue
+            a = _check_attestation(key, raw)
+            if a is None or a.get("target") != logical:
+                findings.append({"target": logical, "finding": "attestation forged or moved"})
+                continue
+            if hashlib.sha256(open(real, "rb").read()).hexdigest() != a["digest"]:
+                findings.append({"target": logical, "finding": "content changed outside the broker"})
+            if a["rid"] not in logged:
+                findings.append({"target": logical, "finding":
+                    "attested request missing from the log (entries truncated or deleted)"})
+            elif latest.get(logical) not in (None, a["rid"]):
+                findings.append({"target": logical, "finding":
+                    "file does not carry the log's latest write for this target"})
+    for target in latest:
+        if not os.path.exists(os.path.join(root, target[len(LOGICAL_ROOT):])):
+            findings.append({"target": target, "finding": "the log records a write but the file is gone"})
+    return {"ok": not findings, "findings": findings}
+
+
 def _claim(path: str) -> int:
     """Exclusive ownership of a broker state file (fixes probe P4)."""
     fd = os.open(path + ".lock", os.O_RDWR | os.O_CREAT, 0o600)
@@ -672,9 +755,16 @@ def serve(cfg: BrokerConfig, socket_path: str, audit_path: str,
         os.remove(socket_path)
     srv = _Server(socket_path, _Handler)
     srv._darm_locks = locks
+    key_path = audit_path + ".key"
+    if not os.path.exists(key_path):
+        kfd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        os.write(kfd, os.urandom(32))
+        os.fsync(kfd)
+        os.close(kfd)
+    key = open(key_path, "rb").read()
     os.chmod(socket_path, 0o600)
     srv.broker = Broker(cfg, KernelClient(kernel_path), AuditLog(audit_path),
-                        load_intents(intents_path) if intents_path else None, intents_path)
+                        load_intents(intents_path) if intents_path else None, intents_path, key)
     srv.broker.reconcile_pending()
     return srv
 

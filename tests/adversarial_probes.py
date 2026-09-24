@@ -183,11 +183,34 @@ report("P7 idempotent retry applies once",
        f"first: {r1.get('effect') or r1.get('error')}; second: {r2.get('effect') or r2.get('error')}; "
        f"prepared records: {len(prepared)}")
 
-# P8, P9: contract probes for Phase 3 (world checked against the log)
+# P8, P9: the world checked against the log (Phase 3)
+key = os.urandom(32)
+a8 = f"{D}/p8.jsonl"
+rm(a8)
+b8 = B.Broker(CFG, KernelClient(), B.AuditLog(a8), None, None, key)
+r8 = b8.handle(wprop("p8.md", "ATTESTED"))
+clean8 = [x for x in B.verify_world(CFG, a8, key)["findings"] if x["target"].endswith("p8.md")]
+with open(f"{WS}/reports/p8.md", "a") as f:
+    f.write(" tampered outside the broker")
+hit8 = [x for x in B.verify_world(CFG, a8, key)["findings"] if x["target"].endswith("p8.md")]
 report("P8 governed file changed outside the broker is detected",
-       hasattr(B, "verify_world"), "contract probe: no world-against-log verification exists yet")
+       bool(r8.get("attested")) and not clean8 and bool(hit8),
+       f"attested={r8.get('attested')}; before tamper: {clean8 or 'clean'}; after: "
+       f"{hit8[0]['finding'] if hit8 else 'nothing found'}")
+
+a9 = f"{D}/p9.jsonl"
+rm(a9)
+b9 = B.Broker(CFG, KernelClient(), B.AuditLog(a9), None, None, key)
+b9.handle(wprop("p9a.md", "FIRST"))
+r9 = b9.handle(wprop("p9b.md", "SECOND"))
+kept = [l for l in open(a9).read().splitlines()
+        if json.loads(l).get("request_id") != r9.get("request_id")]
+open(a9, "w").write("\n".join(kept) + "\n")
+hit9 = [x for x in B.verify_world(CFG, a9, key)["findings"] if x["target"].endswith("p9b.md")]
 report("P9 audit tail truncation is detected",
-       hasattr(B, "verify_world"), "contract probe: no world-against-log verification exists yet")
+       bool(r9.get("attested")) and bool(hit9),
+       f"attested={r9.get('attested')}; after cutting the tail: "
+       f"{hit9[0]['finding'] if hit9 else 'nothing found'}")
 
 # P10: 100 simultaneous clients, one intent
 a10, sock10, ip = f"{D}/p10.jsonl", "/tmp/darm-probe10.sock", f"{D}/p10_intents.txt"
