@@ -41,28 +41,52 @@ def rm(p):
     if os.path.islink(p) or os.path.isfile(p):
         os.remove(p)
 
-# P1: parent directory swapped for a symlink between the check and the write
-orig_real, fired = B._real_in_workspace, [False]
-def attacker_real(cfg, path):
-    real = orig_real(cfg, path)
-    if real and path.endswith("p1.md") and sys._getframe(1).f_code.co_name == "_execute":
-        os.rename(f"{WS}/reports", f"{WS}/reports_orig")
-        os.symlink(OUT, f"{WS}/reports")
-        fired[0] = True
-    return real
-rm(f"{OUT}/p1.md")
-B._real_in_workspace = attacker_real
-try:
-    b, _ = fresh("p1.jsonl")
-    r = b.handle(wprop("p1.md", "P1"))
-finally:
-    B._real_in_workspace = orig_real
+# P1: parent directory swapped for a symlink (two windows)
+def swap_in():
+    os.rename(f"{WS}/reports", f"{WS}/reports_orig")
+    os.symlink(OUT, f"{WS}/reports")
+def swap_out():
     if os.path.islink(f"{WS}/reports"):
         os.remove(f"{WS}/reports")
         os.rename(f"{WS}/reports_orig", f"{WS}/reports")
-escaped = os.path.exists(f"{OUT}/p1.md")
-report("P1 symlink swap between check and write", not escaped,
-       f"wrote outside the workspace: {escaped}; effect={r.get('effect')}", fired[0])
+
+# P1a: swapped after the decision, before execution starts
+orig_exec, fired = B._execute, [False]
+def swap_then_exec(cfg, inv):
+    if any(a["value"].endswith("p1a.md") for a in inv["args"]):
+        swap_in(); fired[0] = True
+    return orig_exec(cfg, inv)
+rm(f"{OUT}/p1a.md")
+B._execute = swap_then_exec
+try:
+    b, _ = fresh("p1a.jsonl")
+    r = b.handle(wprop("p1a.md", "P1A"))
+finally:
+    B._execute = orig_exec
+    swap_out()
+esc = os.path.exists(f"{OUT}/p1a.md")
+report("P1a symlink swap after decision, before execution", not esc,
+       f"wrote outside the workspace: {esc}; effect={r.get('effect')}", fired[0])
+
+# P1b: swapped inside execution, after path resolution, before the write
+hook = "_open_parent" if hasattr(B, "_open_parent") else "_real_in_workspace"
+orig_h, fired = getattr(B, hook), [False]
+def after_resolution(cfg, path):
+    res = orig_h(cfg, path)
+    if res and path.endswith("p1b.md") and sys._getframe(1).f_code.co_name == "_execute":
+        swap_in(); fired[0] = True
+    return res
+rm(f"{OUT}/p1b.md")
+setattr(B, hook, after_resolution)
+try:
+    b, _ = fresh("p1b.jsonl")
+    r = b.handle(wprop("p1b.md", "P1B"))
+finally:
+    setattr(B, hook, orig_h)
+    swap_out()
+esc = os.path.exists(f"{OUT}/p1b.md")
+report(f"P1b symlink swap inside the resolution-to-write window (hook: {hook})", not esc,
+       f"wrote outside the workspace: {esc}; effect={r.get('effect')}", fired[0])
 
 # P2: a foreign writer changes the target between 'prepared' and the effect
 orig_exec, fired = B._execute, [False]

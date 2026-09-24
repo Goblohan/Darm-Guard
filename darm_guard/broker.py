@@ -23,6 +23,7 @@ import hashlib
 import json
 import os
 import socketserver
+import stat
 import threading
 import uuid
 from dataclasses import dataclass
@@ -215,32 +216,97 @@ def _real_in_workspace(cfg: BrokerConfig, path: str) -> Optional[str]:
     return real if real == cfg.workspace or real.startswith(cfg.workspace + os.sep) else None
 
 
-def _execute(cfg: BrokerConfig, inv: dict) -> dict:
-    """Run an admitted invocation, reading arguments only from the frozen invocation."""
-    args = {a["key"]: a["value"] for a in inv["args"]}
-    real = _real_in_workspace(cfg, args.get("path", ""))
-    if real is None:
-        return {"error": "path escapes workspace (real-path check)"}
+_ESCAPE = {"error": "path escapes workspace or crosses a symlink"}
+
+
+def _open_parent(cfg: BrokerConfig, path: str):
+    """Race-free resolution (fixes probe P1): open the workspace, then each
+    directory on the path relative to the previous handle, never following
+    symlinks. Returns (dir_fd, leaf); the caller closes dir_fd. None if the
+    path leaves the workspace, crosses a symlink, or a directory is missing.
+    Checking IS opening, so a later swap cannot redirect the operation."""
+    if not path.startswith(LOGICAL_ROOT):
+        return None
+    parts = path[len(LOGICAL_ROOT):].split("/")
+    if not parts or any(p in ("", ".", "..") for p in parts):
+        return None
+    fd = os.open(cfg.workspace, os.O_RDONLY | os.O_DIRECTORY)
     try:
+        for comp in parts[:-1]:
+            nxt = os.open(comp, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = nxt
+    except OSError:
+        os.close(fd)
+        return None
+    return fd, parts[-1]
+
+
+def _leaf_kind(pfd: int, leaf: str):
+    try:
+        return stat.S_IFMT(os.stat(leaf, dir_fd=pfd, follow_symlinks=False).st_mode)
+    except FileNotFoundError:
+        return None
+
+
+def _observe(cfg: BrokerConfig, path: str):
+    """B5 target observation through the same race-free resolution."""
+    opened = _open_parent(cfg, path)
+    if opened is None:
+        return ("unavailable", "path escapes workspace or crosses a symlink")
+    pfd, leaf = opened
+    try:
+        kind = _leaf_kind(pfd, leaf)
+        if kind is None:
+            return ("absent", None)
+        if kind != stat.S_IFREG:
+            return ("unavailable", "target is not a regular file")
+        fd = os.open(leaf, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=pfd)
+        with os.fdopen(fd, "rb") as f:
+            return ("present", hashlib.sha256(f.read()).hexdigest())
+    except OSError as e:
+        return ("unavailable", f"{type(e).__name__}: {e}")
+    finally:
+        os.close(pfd)
+
+
+def _execute(cfg: BrokerConfig, inv: dict) -> dict:
+    """Run an admitted invocation through handles pinned at resolution time."""
+    args = {a["key"]: a["value"] for a in inv["args"]}
+    opened = _open_parent(cfg, args.get("path", ""))
+    if opened is None:
+        return dict(_ESCAPE)
+    pfd, leaf = opened
+    try:
+        if _leaf_kind(pfd, leaf) == stat.S_IFLNK:
+            return dict(_ESCAPE)
         if inv["tool"] == "read_file":
-            with open(real) as f:
+            fd = os.open(leaf, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=pfd)
+            with os.fdopen(fd) as f:
                 return {"content": f.read()}
         if inv["tool"] == "write_file":
             content = args.get("content", "")
-            tmp = f"{real}.darm-tmp-{uuid.uuid4().hex}"
-            with open(tmp, "w") as f:
+            tmp = f".{leaf}.darm-tmp-{uuid.uuid4().hex}"
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644,
+                         dir_fd=pfd)
+            with os.fdopen(fd, "w") as f:
                 f.write(content)
                 f.flush()
                 os.fsync(f.fileno())
-            os.replace(tmp, real)   # atomic: old content or new, never partial
-            _fsync_dir(real)
+            os.replace(tmp, leaf, src_dir_fd=pfd, dst_dir_fd=pfd)  # atomic, in the checked directory
+            os.fsync(pfd)
             return {"written": len(content)}
         if inv["tool"] == "list_dir":
-            return {"entries": sorted(os.listdir(real))}
+            fd = os.open(leaf, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=pfd)
+            try:
+                return {"entries": sorted(os.listdir(fd))}
+            finally:
+                os.close(fd)
     except OSError as e:
         return {"error": f"{type(e).__name__}: {e.strerror}"}
+    finally:
+        os.close(pfd)
     return {"error": "no implementation for tool"}
-
 
 class Broker:
     """B1 brokerStep: parse -> normal-form check -> canonicalize -> kernel
@@ -302,12 +368,8 @@ class Broker:
             real = None
             if intended is not None:
                 args = {a["key"]: a["value"] for a in inv["args"]}
-                real = _real_in_workspace(self.cfg, args.get("path", ""))
-                before = (
-                    _target_state(real)
-                    if real is not None
-                    else ("unavailable", "path outside workspace")
-                )
+                real = args.get("path", "")
+                before = _observe(self.cfg, real)
                 resp = dict(
                     resp,
                     before_state=before,
@@ -335,7 +397,7 @@ class Broker:
         )
 
         if intended is not None:
-            observed = _target_state(real) if real is not None else ("unavailable", "path outside workspace")
+            observed = _observe(self.cfg, real)
             response_fields["reconciliation"] = _reconcile(
                 before, intended, observed
             )
