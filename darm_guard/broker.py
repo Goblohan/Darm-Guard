@@ -231,6 +231,7 @@ _ESCAPE = {"error": "path escapes workspace or crosses a symlink"}
 
 _libc = ctypes.CDLL(None, use_errno=True)
 _RENAME_NOREPLACE, _RENAME_EXCHANGE = 1, 2
+_HAS_RENAMEAT2 = hasattr(_libc, "renameat2")
 
 
 def _renameat2(pfd: int, src: str, dst: str, flags: int) -> None:
@@ -411,6 +412,60 @@ def _execute(cfg: BrokerConfig, inv: dict, expected=None, attest=None) -> dict:
         os.close(pfd)
     return {"error": "no implementation for tool"}
 
+def _basis(resp: dict) -> list:
+    """Phase 4: each response carries the evidence basis of its own claims:
+    the darm-monitor theorems and THREAT_MODEL.md assumptions each rests on.
+    A claim with no theorem behind it says so, so no claim travels without
+    its support."""
+    out = []
+
+    def claim(text, theorems, assumptions):
+        out.append({"claim": text, "theorems": theorems, "assumptions": assumptions})
+
+    d, eff, fail = resp.get("decision"), resp.get("effect"), resp.get("failure")
+    certified = ["kernel binary certified against K4 on 1,000 answers, not proved"]
+    if fail in ("temporal", "observation", "authority", "semantic", "provenance"):
+        claim(f"rejected by the kernel ({fail})",
+              ["DARM.Kernel.admit_sound", "DARM.Kernel4.k4_conservative_extension"], ["A2"] + certified)
+    elif fail == "intent":
+        claim("no principal-held intent for this action", ["DARM.E24.execution_requires_intent"], ["A2"])
+    elif fail == "clock":
+        claim("the clock reads earlier than the audit log's last record", [],
+              ["A6: witnessed by the audit log, not proved"])
+    if d == "admit" and eff != "already_applied":
+        claim("admitted by the kernel; the executed invocation is the decided one",
+              ["DARM.Kernel.admit_sound", "DARM.Broker3.executed_is_canonical"],
+              ["A2"] + certified + ["broker certified against B3 on sampled inputs, not proved"])
+    if resp.get("intent_consumed"):
+        claim("one principal-held intent was consumed", ["DARM.E24.execution_requires_intent"], ["A2", "A5"])
+    if d == "admit" and eff in ("succeeded", "failed", "unknown"):
+        claim("a durable prepared record preceded any effect", ["DARM.Lifecycle.no_silent_effect_ever"], ["A3"])
+    if eff == "succeeded" and "written" in resp:
+        claim("the write applied from the recorded before-state",
+              ["DARM.EffectIntegrity.cas_applies_iff"],
+              ["A4", "renameat2 available: no window" if _HAS_RENAMEAT2 else
+               "renameat2 unavailable: compare-then-rename fallback, small window, not covered by B6"])
+    if resp.get("conflict"):
+        claim("conflict: the foreign state was left intact", ["DARM.EffectIntegrity.cas_conflict_preserves"], ["A4"])
+    if resp.get("reconciliation") == "confirmedSuccess":
+        claim("the target is in the intended state (state correspondence, not causation)",
+              ["DARM.EffectReconciliation.success_is_state_confirmation"], ["A5"])
+    if resp.get("attested"):
+        claim("the written file attests this request, verifiable later against the log",
+              ["DARM.EffectIntegrity.writes_honest", "DARM.EffectIntegrity.tamper_detected",
+               "DARM.EffectIntegrity.truncation_detected"], ["A2: the attestation key is secret"])
+    if eff == "already_applied":
+        claim("already applied: this retry did not repeat the effect",
+              ["DARM.EffectIntegrity.cas_retry_idempotent"], ["A5"])
+    if eff == "unknown":
+        claim("effect unknown: the log shows it started; reconcile before retrying",
+              ["DARM.Lifecycle.no_silent_effect_ever"], ["A3"])
+    if d == "admit":
+        claim("no other route to this effect exists", [],
+              ["A1: evidenced in the reference deployment and monitored by verify_world, not proved"])
+    return out
+
+
 class Broker:
     """B1 brokerStep: parse -> normal-form check -> canonicalize -> kernel
     -> execute the same invocation if admitted -> audit."""
@@ -452,7 +507,9 @@ class Broker:
         """Evidence before effect. Never raises: any unexpected failure is
         reported with effect 'unknown' rather than dropping the connection."""
         try:
-            return self._handle(obj, peer)
+            resp = self._handle(obj, peer)
+            resp["basis"] = _basis(resp)
+            return resp
         except Exception as e:
             return {"decision": "error", "effect": "unknown",
                     "error": f"{type(e).__name__}: {e}"}
