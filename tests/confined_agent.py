@@ -40,6 +40,8 @@ check("broker read-back of the written file", r.get("content") == "written by co
 check("bypass blocked: direct read of workspace file",
       fails(lambda: open("/tmp/darmdemo/workspace/notes.txt").read()))
 check("bypass blocked: direct read of secret", fails(lambda: open("/tmp/darmdemo/secret.txt").read()))
+check("bypass blocked: read the broker's attestation key",
+      fails(lambda: open("/tmp/darmdemo/audit.jsonl.key", "rb").read()))
 check("bypass blocked: write to filesystem", fails(lambda: open("/agent_out.txt", "w").write("x")))
 check("bypass blocked: outbound network",
       fails(lambda: socket.create_connection(("1.1.1.1", 443), timeout=3).close()))

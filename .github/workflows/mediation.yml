@@ -36,6 +36,7 @@ jobs:
             --registry tests/fixtures/mediation_registry.txt \
             --socket /tmp/darm-sock/broker.sock --audit /tmp/darmdemo/audit.jsonl &
           sleep 3
+          python -c "from darm_guard.broker import BrokerClient; r = BrokerClient('/tmp/darm-sock/broker.sock').propose('write_file', {'path': '/workspace/reports/canary.md', 'content': 'canary'}); print('canary:', r); assert r.get('attested') is True, 'canary not attested'"
           docker run --rm --network none --read-only \
             --user "$(id -u):$(id -g)" \
             -v /tmp/darm-sock:/sock \
@@ -44,3 +45,28 @@ jobs:
 
       - name: Audit chain intact
         run: python tests/verify_audit.py /tmp/darmdemo/audit.jsonl
+
+      - name: World verified against the log
+        run: |
+          python - << 'EOF'
+          import json
+          from darm_guard.broker import BrokerConfig, verify_world
+          cfg = BrokerConfig.load("tests/fixtures/mediation_config.json", "tests/fixtures/mediation_registry.txt")
+          key = open("/tmp/darmdemo/audit.jsonl.key", "rb").read()
+          res = verify_world(cfg, "/tmp/darmdemo/audit.jsonl", key)
+          print(json.dumps(res, indent=2))
+          assert res["ok"], "world and log disagree"
+          EOF
+
+      - name: A bypass is detected (a process outside the broker edits the canary)
+        run: |
+          echo "changed outside the broker" >> /tmp/darmdemo/workspace/reports/canary.md
+          python - << 'EOF'
+          from darm_guard.broker import BrokerConfig, verify_world
+          cfg = BrokerConfig.load("tests/fixtures/mediation_config.json", "tests/fixtures/mediation_registry.txt")
+          key = open("/tmp/darmdemo/audit.jsonl.key", "rb").read()
+          res = verify_world(cfg, "/tmp/darmdemo/audit.jsonl", key)
+          hits = [f for f in res["findings"] if f["target"].endswith("canary.md")]
+          print(hits)
+          assert hits, "a bypass of the broker went undetected"
+          EOF
