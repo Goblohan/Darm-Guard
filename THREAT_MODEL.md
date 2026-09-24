@@ -1,56 +1,66 @@
-# DARM Guard: threat model and trusted computing base (0.7.x)
+# DARM Guard: threat model and trusted computing base (0.8.x)
 
-Every guarantee below rests on stated assumptions. Each assumption names its evidence, or says that there is none yet. A guarantee is only as strong as the weakest assumption it depends on.
+Every guarantee below rests on stated assumptions, and every assumption has a status: **enforced** (made structural), **witnessed** or **monitored** (violations become visible), or **declared** (still trusted, and said so). Each broker response carries a `basis` naming the theorems and assumptions its own claims rest on; a claim with no theorem behind it says so.
 
-## The adversary
+## Adversaries
 
-The agent: arbitrarily capable and possibly adversarial, including an agent steered by content it has read. It may compose any proposal with any values, send arbitrary bytes to the broker's socket, retry, and flood. It does not hold the tools' credentials, and (by assumption A1 below) it has no route to a governed effect other than the broker.
+**The agent**: arbitrarily capable and possibly adversarial, including an agent steered by content it has read. It may compose any proposal, send arbitrary bytes to the broker's socket, retry, and flood. It holds no tool credentials and, under A1, has no route to a governed effect other than the broker.
+
+**Other local processes**: not confined and not trusted. They may modify the workspace concurrently: swap directories for symlinks, overwrite files between the broker's record and its write, edit governed files afterwards, or truncate the audit log. They are not assumed absent; the defences below either make these actions ineffective or make them visible.
 
 ## What is guaranteed, given the assumptions
 
-- No governed effect without kernel admission (K4, K3; the shipped binary certified on 1,000 answers).
-- The executed invocation is the decided one (B3; the broker certified on 2,000 facts).
-- The agent cannot vouch for its own values; payload cannot buy authority (B1, B2a, K4).
-- With --intents, no action without a principal-held, single-use intent; the agent's stated reason is irrelevant (E24; certified on 300 sequences).
-- Evidence before effect: every effect has a prior durable record, and no effect reads as "none" in the log (B4, proved; tests/evidence_attacks.py).
+| Guarantee | Basis | Evidence against the implementation |
+|---|---|---|
+| No governed effect without kernel admission | K4, K3 | Binary certified on 1,000 answers |
+| The executed invocation is the decided one | B3 | Broker certified on 2,000 facts |
+| The agent cannot vouch for its own values; payload cannot buy authority | B1, B2a, K4 | Certified; attack tests |
+| No action without a principal-held, single-use intent | E24 | Certified on 300 sequences |
+| A durable record precedes every effect; no effect reads as "none" | B4 | Evidence tests |
+| Reconciliation reports state correspondence, never causation | B5 | Probe P3 |
+| Writes apply only from the recorded state; conflicts leave the foreign state intact; retries cannot double an effect | B6 | Probes P2, P7 |
+| A governed file changed outside the broker, or a dropped log entry whose file survives, is detected | B6 | Probes P8, P9; CI canary |
+| A path cannot be redirected between check and use | By construction (handle walk, no symlinks followed) | Probes P1a, P1b; not modeled formally |
 
 ## Trusted computing base
 
 | Component | Status |
 |---|---|
-| Lean proofs of K1, K3, K4, B1–B4, E24 | Checked by Lean's kernel; CI audits for sorryAx |
-| Lean compiler, runtime, and JSON parser in the kernel binary | Trusted; the binary's answers are differentially certified against the Lean model |
-| Python broker | Trusted; certified against B3 and E24 on sampled inputs, not proved |
-| Python interpreter and standard library | Trusted |
-| Operating system: process isolation, file permissions, Unix sockets | Trusted |
-| Filesystem: fsync durability, rename atomicity | Trusted (assumptions A3, A4) |
-| Container runtime, for the reference deployment | Trusted (assumption A1) |
-| System clock | Trusted (assumption A6) |
+| Lean proofs (K1, K3, K4, B1–B6, E24) | Checked by Lean's kernel; CI audits for sorryAx |
+| Lean compiler, runtime and JSON parser in the kernel binary | Trusted; answers differentially certified against K4 |
+| Python broker | Trusted; certified against B3 and E24 on sampled inputs; B4–B6 behaviour tested by probes, not certified |
+| Python interpreter, standard library, and libc (renameat2 via ctypes) | Trusted |
+| Operating system: process isolation, permissions, Unix sockets, flock, SO_PEERCRED | Trusted |
+| Filesystem: fsync, rename atomicity, RENAME_EXCHANGE, user extended attributes | Trusted (A3, A4) |
+| Container runtime, for the reference deployment | Trusted (A1) |
 
 ## Assumptions
 
-| | Assumption | Needed for | Evidence |
+| | Assumption | Status | Evidence, and what is not covered |
 |---|---|---|---|
-| A1 | The agent's only route to a governed effect is the broker socket | Every guarantee | CI bypass tests, reference deployment only |
-| A2 | The agent cannot write the config, registry, intents, audit log, or kernel binary | Every guarantee | Deployer's file permissions; config and registry fingerprints logged at startup; kernel pinned by SHA-256 |
-| A3 | An append that returns after fsync has reached durable storage | B4 | Operating system guarantee; not tested under power loss |
-| A4 | Renaming within one filesystem is atomic | B4, atomic writes | POSIX guarantee; does not hold on some network filesystems |
-| A5 | One broker process owns the intents file and audit log | E24 single use, audit chain | A lock within one process; several brokers sharing these files is unsupported |
-| A6 | The system clock is trustworthy | Credential expiry | None; clock rollback is not detected |
-| A7 | Whoever can connect to the socket is the agent being governed | Identity of the caller | Socket permissions 0600; no caller authentication |
+| A1 | The agent's only route to a governed effect is the broker | **Monitored** | CI bypass tests in the reference deployment; verify_world detects a bypass that changes a governed file (CI canary). Not detected: bypasses that only read, or that write files the broker never governed |
+| A2 | The agent cannot read or write the config, registry, intents, audit log, kernel binary, or attestation key | **Declared** | Deployer's file permissions; key created owner-only (0600); CI confirms the confined agent cannot read the key |
+| A3 | An append or write that returns after fsync is durable | **Declared** | Operating system guarantee; not tested under power loss |
+| A4 | Rename and exchange within one filesystem are atomic | **Declared** | POSIX and Linux guarantees; RENAME_EXCHANGE requires filesystem support |
+| A5 | One broker owns the audit log and intents file | **Enforced** | Exclusive locks at startup; a second broker refuses to start (probe P4) |
+| A6 | The system clock is trustworthy | **Witnessed** | Requests earlier than the latest audit record (5 s tolerance) are refused (probe P5). Not detected: forward jumps, or rollback before the first record |
+| A7 | The caller is identified correctly | **Enforced** (process identity) | pid, uid and gid read from the kernel (probe P6). This identifies an operating-system process, not a cryptographically authenticated principal |
 
 ## Out of scope by design
 
 - A compromised host, operating system, or privileged process; hardware and firmware.
 - Whether payload is true, harmless, or free of sensitive data; information flow and declassification.
-- What an effect causes downstream (a written config file that another system reloads).
+- What an effect causes downstream.
+- Reconciliation of effects outside the local filesystem: for external systems it requires the target's cooperation (idempotency keys or queryable state), which the broker cannot supply alone.
 - Supply chain beyond the pinned kernel hash.
 
-## Known limitations, not yet addressed
+## Known limitations
 
-- Time-of-check to time-of-use on paths: another process can change the filesystem between the real-path check and the file operation. The kernel reasons about path strings, not file identities.
-- Truncation of the most recent audit entries is not detectable without an external checkpoint; entries are hash-chained but not signed.
-- Credential expiry is checked at decision time, not when the effect completes.
-- Intents are per tool, not per resource or per content.
-- No revocation of in-flight requests; no delegation or attenuation model.
-- Availability: a 1 MB request limit and a connection backlog, nothing more.
+- **Untested fallbacks.** Without renameat2, writes fall back to compare-then-rename, with a small window not covered by B6; without user extended attributes, files carry no attestation. Both are reported in responses (`attested: false`; the write mechanism in the basis) but neither path is exercised by the tests.
+- **ABA.** A foreign writer that restores the exact recorded state between the record and the write is indistinguishable from no change. One that restores both content and attestation defeats verification.
+- **Key compromise.** Anyone who can read the attestation key (violating A2) can forge attestations.
+- **Effect-free truncation.** Dropped log entries are detected only when the governed file they describe survives; an effect-free tail needs an external checkpoint, which is not implemented.
+- **Timing of authority.** Credential expiry is checked at decision time, not when the effect completes; in-flight requests cannot be revoked.
+- **Granularity.** Intents are per tool, not per resource or content; there is no delegation or attenuation model.
+- **Availability.** A 1 MB request limit and a backlog of 64; a 100-client burst is tested (probe P10). No stronger availability guarantee.
+- **Evidence basis.** The check that cited theorems exist matches names, not meanings; that each theorem supports its claim is established by review.
