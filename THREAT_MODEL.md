@@ -59,6 +59,7 @@ Every guarantee below rests on stated assumptions, and every assumption has a st
 - **Untested fallbacks.** Without renameat2, writes fall back to compare-then-rename, with a small window not covered by B6; without user extended attributes, files carry no attestation. Both are reported in responses (`attested: false`; the write mechanism in the basis) but neither path is exercised by the tests.
 - **ABA.** A foreign writer that restores the exact recorded state between the record and the write is indistinguishable from no change. One that restores both content and attestation defeats verification.
 - **Key compromise.** Anyone who can read the attestation key (violating A2) can forge attestations.
+- **Key rotation.** A file attested under any key other than the current one is indistinguishable from a forgery, so reinstalling the broker or rotating its key makes previously governed files report "attestation forged or moved" until they are re-attested. A key ring (old keys kept for verification only) is not implemented.
 - **Effect-free truncation.** Dropped log entries are detected only when the governed file they describe survives; an effect-free tail needs an external checkpoint, which is not implemented.
 - **Timing of authority.** Credential expiry is checked at decision time, not when the effect completes; in-flight requests cannot be revoked.
 - **Granularity.** Intents are per tool, not per resource or content; there is no delegation or attenuation model.

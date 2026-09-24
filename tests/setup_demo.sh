@@ -2,6 +2,7 @@
 # Rebuild the demo fixture in /tmp/darmdemo (cleared whenever the machine restarts).
 set -e
 D=/tmp/darmdemo
+rm -rf "$D/workspace"   # every run starts from an empty workspace
 mkdir -p "$D/workspace/docs" "$D/workspace/reports"
 echo "hello from notes" > "$D/workspace/notes.txt"
 echo "the agent invented this path" > "$D/workspace/other.txt"
