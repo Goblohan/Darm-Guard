@@ -1,0 +1,41 @@
+name: Adversarial probes (gate)
+
+# Every probe must HOLD. A probe that is EXPOSED, or INCONCLUSIVE because
+# its hook never fired, fails the build, so no change can quietly reopen a
+# closed attack. Also runs the evidence tests and the original attack suite.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  probes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install darm-guard and the pinned kernel
+        run: |
+          pip install -e .
+          darm-guard-install-kernel
+
+      - name: Demo fixture
+        run: ./tests/setup_demo.sh
+
+      - name: Evidence tests
+        run: python tests/evidence_attacks.py
+
+      - name: Original broker attacks
+        run: |
+          darm-broker --config /tmp/darmdemo/config.json --registry /tmp/darmdemo/registry.txt \
+            --audit /tmp/darmdemo/ci.jsonl > /tmp/broker.log 2>&1 &
+          sleep 3
+          python tests/broker_attacks.py
+
+      - name: Adversarial probes (all must hold)
+        run: python tests/adversarial_probes.py

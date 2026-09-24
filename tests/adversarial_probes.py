@@ -237,3 +237,4 @@ report("P10 one intent, 100 clients: one spend, no unknowns, none dropped",
 
 print(f"\nHELD {results.count('HELD')}  EXPOSED {results.count('EXPOSED')}  "
       f"INCONCLUSIVE {results.count('INCONCLUSIVE')}  of {len(results)}")
+sys.exit(0 if results.count('HELD') == len(results) else 1)
