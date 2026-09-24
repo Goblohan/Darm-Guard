@@ -35,6 +35,15 @@ PATH_KEYS = ("path",)
 LOGICAL_ROOT = "/workspace/"
 
 
+def _fsync_dir(path: str) -> None:
+    """Durably persist the directory entry containing path."""
+    fd = os.open(os.path.dirname(path) or ".", os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 @dataclass(frozen=True)
 class BrokerConfig:
     policy: dict                    # kernel JSON policy
@@ -170,6 +179,7 @@ def _execute(cfg: BrokerConfig, inv: dict) -> dict:
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp, real)   # atomic: old content or new, never partial
+            _fsync_dir(real)
             return {"written": len(content)}
         if inv["tool"] == "list_dir":
             return {"entries": sorted(os.listdir(real))}
@@ -275,6 +285,7 @@ class Broker:
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp, self.intents_path)
+            _fsync_dir(self.intents_path)
 
 
 # ---- Server -------------------------------------------------------------
