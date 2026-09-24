@@ -22,13 +22,16 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import socket
 import socketserver
 import ctypes
+import fcntl
+import struct
 import stat
 import threading
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 
 from .kernel import KernelClient
@@ -184,6 +187,7 @@ class AuditLog:
     def __init__(self, path: str):
         self.path = path
         self.prev = "0" * 64
+        self.last_ts = None
         self._lock = threading.Lock()
         if os.path.exists(path):
             for n, line in enumerate(open(path)):
@@ -195,10 +199,15 @@ class AuditLog:
                 if e.get("prev_hash") != self.prev or body != h:
                     raise RuntimeError(f"audit chain broken at entry {n}: refusing to start")
                 self.prev = h
+                if e.get("ts"):
+                    ts = datetime.fromisoformat(e["ts"])
+                    self.last_ts = max(self.last_ts, ts) if self.last_ts else ts
 
     def append(self, entry: dict) -> None:
         with self._lock:
-            entry = dict(entry, prev_hash=self.prev)
+            now = datetime.now()
+            entry = dict(entry, prev_hash=self.prev, ts=now.isoformat())
+            self.last_ts = max(self.last_ts, now) if self.last_ts else now
             h = hashlib.sha256(json.dumps(entry, sort_keys=True).encode()).hexdigest()
             entry["entry_hash"] = h
             with open(self.path, "a") as f:
@@ -406,19 +415,31 @@ class Broker:
             return inv, tool, {"decision": "reject", "failure": d.failure, "error": d.error}
         return inv, tool, {"decision": "admit"}
 
-    def handle(self, obj) -> dict:
+    def handle(self, obj, peer=None) -> dict:
         """Evidence before effect. Never raises: any unexpected failure is
         reported with effect 'unknown' rather than dropping the connection."""
         try:
-            return self._handle(obj)
+            return self._handle(obj, peer)
         except Exception as e:
             return {"decision": "error", "effect": "unknown",
                     "error": f"{type(e).__name__}: {e}"}
 
-    def _handle(self, obj) -> dict:
+    def _handle(self, obj, peer=None) -> dict:
         rid = uuid.uuid4().hex
         with self._lock:
+            last = self.audit.last_ts
+            if last and datetime.now() < last - timedelta(seconds=5):
+                resp = {"decision": "reject", "failure": "clock", "request_id": rid,
+                        "effect": "none", "peer": peer,
+                        "error": "clock rollback detected: earlier than the audit log's last record"}
+                try:
+                    self._record(rid, "decision", None, None, resp)
+                except Exception:
+                    pass
+                return resp
             inv, tool, resp = self.decide(obj)
+            if peer:
+                resp = dict(resp, peer=peer)
             if resp["decision"] != "admit":
                 resp = dict(resp, request_id=rid, effect="none")
                 try:
@@ -488,6 +509,7 @@ class Broker:
             "executed": response.get("executed", False),
             "intent_consumed": response.get("intent_consumed"),
             "reconciliation": response.get("reconciliation"),
+            "peer": response.get("peer"),
             "before_state": response.get("before_state"),
             "intended_state": response.get("intended_state"),
             "observed_state": response.get("observed_state"),
@@ -513,6 +535,13 @@ MAX_REQUEST = 1 << 20   # 1 MB per proposal
 
 class _Handler(socketserver.StreamRequestHandler):
     def handle(self):
+        try:
+            raw_cred = self.request.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED,
+                                               struct.calcsize("3i"))
+            pid, uid, gid = struct.unpack("3i", raw_cred)
+            peer = {"pid": pid, "uid": uid, "gid": gid}
+        except OSError:
+            peer = None
         while True:
             raw = self.rfile.readline(MAX_REQUEST + 1)
             if not raw:
@@ -524,7 +553,7 @@ class _Handler(socketserver.StreamRequestHandler):
                 obj = json.loads(raw)
             except Exception:
                 obj = None
-            self._send(self.server.broker.handle(obj))
+            self._send(self.server.broker.handle(obj, peer))
 
     def _send(self, resp: dict) -> None:
         self.wfile.write((json.dumps(resp) + "\n").encode())
@@ -535,16 +564,41 @@ class _Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     daemon_threads = True
     request_queue_size = 64
 
+    def server_close(self):
+        super().server_close()
+        for fd in getattr(self, "_darm_locks", []):
+            os.close(fd)
+        self._darm_locks = []
+
 
 def load_intents(path: str) -> list:
     return [line.strip() for line in open(path) if line.strip()]
 
 
+def _claim(path: str) -> int:
+    """Exclusive ownership of a broker state file (fixes probe P4)."""
+    fd = os.open(path + ".lock", os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        raise RuntimeError(f"{path} is owned by another running broker; refusing to start")
+    return fd
+
+
 def serve(cfg: BrokerConfig, socket_path: str, audit_path: str,
           kernel_path: Optional[str] = None, intents_path: Optional[str] = None) -> _Server:
+    locks = [_claim(audit_path)]
+    if intents_path:
+        try:
+            locks.append(_claim(intents_path))
+        except RuntimeError:
+            os.close(locks[0])
+            raise
     if os.path.exists(socket_path):
         os.remove(socket_path)
     srv = _Server(socket_path, _Handler)
+    srv._darm_locks = locks
     os.chmod(socket_path, 0o600)
     srv.broker = Broker(cfg, KernelClient(kernel_path), AuditLog(audit_path),
                         load_intents(intents_path) if intents_path else None, intents_path)
