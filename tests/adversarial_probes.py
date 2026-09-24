@@ -212,6 +212,39 @@ report("P9 audit tail truncation is detected",
        f"attested={r9.get('attested')}; after cutting the tail: "
        f"{hit9[0]['finding'] if hit9 else 'nothing found'}")
 
+# P11: a failed keyed attempt must never be reported as already applied
+b, _ = fresh("p11.jsonl")
+p11 = {"tool": "write_file", "args": [["path", "/workspace/link.txt"], ["content", "x"]],
+       "idempotency_key": "p11"}
+r1, r2 = b.handle(p11), b.handle(p11)
+report("P11 a failed keyed attempt is never reported as already applied",
+       r1.get("effect") == "failed" and r2.get("effect") != "already_applied",
+       f"first: {r1.get('effect')}; retry: {r2.get('effect')} {r2.get('error') or ''}")
+
+# P12: a key left unresolved by reconciliation must never be reported as already applied
+orig_record, fired = B.Broker._record, [False]
+def crash_p12(self, rid, event, inv, tool, resp):
+    if event == "outcome" and resp.get("idempotency_key") == "p12":
+        fired[0] = True
+        raise OSError("simulated crash before the outcome record")
+    return orig_record(self, rid, event, inv, tool, resp)
+B.Broker._record = crash_p12
+try:
+    b, a12 = fresh("p12.jsonl")
+    p12 = wprop("p12.md", "P12", idempotency_key="p12")
+    b.handle(p12)
+finally:
+    B.Broker._record = orig_record
+open(f"{WS}/reports/p12.md", "w").write("A THIRD STATE")
+srv = B.serve(CFG, "/tmp/darm-probe12.sock", a12)
+verdicts = [e.get("reconciliation") for e in entries(a12) if e.get("event") == "reconciled"]
+r = srv.broker.handle(p12)
+srv.server_close()
+report("P12 a key left unresolved by reconciliation is never reported as already applied",
+       r.get("effect") != "already_applied",
+       f"reconciliation: {verdicts}; retry after restart: {r.get('effect')} {r.get('error') or ''}",
+       fired[0])
+
 # P10: 100 simultaneous clients, one intent
 a10, sock10, ip = f"{D}/p10.jsonl", "/tmp/darm-probe10.sock", f"{D}/p10_intents.txt"
 rm(a10)

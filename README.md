@@ -71,7 +71,7 @@ The config holds the policy, the credential's tools, the workspace directory, an
 | No action without the principal's intent | Proved in E24 (execution requires a registered, single-use intent; the agent's claimed reason is irrelevant); this broker certified against E24 on 300 three-step sequences; attack-tested: a hijacked third write is blocked |
 | No effect without prior evidence | Proved in B4 (no_silent_effect_ever, on propext alone); tested: an unwritable log means nothing is performed, a tampered log stops the broker from starting, a request with no reply reports unknown |
 | Writes apply only from the recorded state; conflicts leave the other writer's change intact | Proved in B6 (cas_applies_iff, cas_conflict_preserves); probe P2 |
-| A keyed request, retried any number of times, performs exactly one effect | Proved in B7 (at_most_once); probe P7. Without an idempotency key, a retry performs the write again |
+| A keyed request, retried any number of times, performs at most one effect; 'already applied' is reported only when that effect occurred | Proved in B7b (already_applied_sound, at_most_once_with_failures); probes P7, P11, P12. Without an idempotency key, a retry performs the write again |
 | Changes outside the broker, and dropped log entries, are detected | Proved in B6 (tamper_detected, truncation_detected); probes P8 and P9; a CI canary shows a bypass of the broker being caught |
 | Reconciliation reports state, not causation | Proved in B5 (success_is_state_confirmation); probe P3 |
 | The agent cannot vouch for itself | Proved in B1; enforced at the interface; attack-tested |
@@ -216,7 +216,8 @@ The conditions behind each check are proved in [darm-monitor](https://github.com
 - v0.7 -- intents: E24 epistemic premise transfer and the single-use intent gate, certified against the broker; darm-verify adapters for AgentLock and Agent-Airlock.
 - v0.7.1 -- evidence before effect: fail-closed prepared records, explicit effect states, startup chain verification, atomic writes. Fixes a 0.7.0 gap in which an effect could occur with no record and the client was told it was rejected.
 - v0.8 -- adversarial hardening: race-free paths, compare-and-swap writes, single-owner locks, a clock witness, kernel-verified callers, startup reconciliation, idempotency keys, file attestation with verify_world, and an evidence basis in every response; B4, B5 and B6 proved; eleven adversarial probes gate every push.
-- v0.8.1 (this release) -- corrects an overclaim: retry non-repetition was attributed to B6's final-state theorem; it holds for keyed requests and is now proved in B7.
+- v0.8.1 -- corrects an overclaim: retry non-repetition was attributed to B6's final-state theorem; it holds for keyed requests and is now proved in B7.
+- v0.8.2 (this release) -- fixes 'already applied' being reported after a failed or unresolved keyed attempt (probes P11, P12); proved sound in B7b.
 - Next -- an external audit checkpoint; in-flight revocation; per-resource intents and delegation; certifying the Python broker against B4-B6; publishing third-party comparisons with their maintainers.
 - Later -- credential-holding enforcement broker for one domain; gated credential expansion.
 

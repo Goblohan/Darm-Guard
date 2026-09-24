@@ -455,9 +455,13 @@ def _basis(resp: dict) -> list:
               ["DARM.EffectIntegrity.writes_honest", "DARM.EffectIntegrity.tamper_detected",
                "DARM.EffectIntegrity.truncation_detected"], ["A2: the attestation key is secret"])
     if eff == "already_applied":
-        claim("already applied: this retry performed no effect (the idempotency key short-circuited it)",
-              ["DARM.Idempotency.at_most_once", "DARM.Idempotency.keyed_repeat_no_effect"],
-              ["A5", "pending keys after a crash are closed by startup reconciliation: tested, not modelled"])
+        claim("already applied: the original attempt's effect occurred, and this retry performed none",
+              ["DARM.Idempotency2.already_applied_sound", "DARM.Idempotency2.at_most_once_with_failures"],
+              ["A5", "reconciliation verdicts map to key states: tested, not modelled; "
+               "confirmedSuccess is state correspondence, not attribution"])
+    if "earlier attempt with this idempotency key failed" in (resp.get("error") or ""):
+        claim("an earlier attempt with this key failed; nothing was applied then or now",
+              ["DARM.Idempotency2.at_most_once_with_failures"], ["A5"])
     if eff == "unknown":
         claim("effect unknown: the log shows it started; reconcile before retrying",
               ["DARM.Lifecycle.no_silent_effect_ever"], ["A3"])
@@ -549,6 +553,10 @@ class Broker:
                         dup = {"decision": "admit", "request_id": rid, "effect": "already_applied",
                                "original_request_id": prior["rid"],
                                "original_effect": prior.get("effect")}
+                    elif prior["state"] == "failed":
+                        dup = {"decision": "reject", "request_id": rid, "effect": "none",
+                               "error": "an earlier attempt with this idempotency key failed; "
+                                        "nothing was applied"}
                     else:
                         dup = {"decision": "reject", "request_id": rid, "effect": "none",
                                "error": "a request with this idempotency key is unresolved"}
@@ -619,7 +627,9 @@ class Broker:
         except Exception:
             resp["evidence"] = "outcome_unrecorded"   # log shows prepared, no outcome
         if key is not None:
-            self._keys[key] = dict(self._keys[key], state="done", effect=resp.get("effect"))
+            # B7b: done only if the effect occurred; a failed attempt is failed
+            state = "done" if resp.get("effect") == "succeeded" else "failed"
+            self._keys[key] = dict(self._keys[key], state=state, effect=resp.get("effect"))
         return resp
 
     def _record(self, rid, event, inv, tool, response: dict) -> None:
@@ -677,8 +687,12 @@ class Broker:
                 n += 1
             k = e.get("idempotency_key")
             if k:
+                v = closed.get(rid)
+                state = ("done" if v in ("succeeded", "confirmedSuccess")
+                         else "failed" if v in ("failed", "confirmedFailure")
+                         else "pending")   # unresolved: never guess
                 self._keys[k] = {"rid": rid, "hash": e.get("invocation_hash"),
-                                 "state": "done", "effect": closed.get(rid)}
+                                 "state": state, "effect": v}
         return n
 
     def _persist_intents(self) -> None:

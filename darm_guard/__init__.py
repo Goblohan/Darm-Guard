@@ -6,7 +6,7 @@ from .session import Session, SessionEvent
 from .checker import check_transfer
 from .kernel import KernelGuard, KernelClient, KernelPolicy, ToolRule, ArgRule, KernelDecision
 
-__version__ = "0.8.1"
+__version__ = "0.8.2"
 __all__ = [
     "DARMGuard", "Mode", "Policy", "Credential", "TransferResult",
     "FailureKind", "FailureWitness", "DriftLevel",
