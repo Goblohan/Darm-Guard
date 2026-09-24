@@ -24,6 +24,7 @@ import json
 import os
 import socketserver
 import threading
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional, Tuple
@@ -79,6 +80,8 @@ def parse_proposal(obj) -> Optional[Tuple[str, List[Tuple[str, str]]]]:
         if not (isinstance(kv, list) and len(kv) == 2 and all(isinstance(x, str) for x in kv)):
             return None
         out.append((kv[0], kv[1]))
+    if len({k for k, _ in out}) != len(out):
+        return None   # duplicate keys: decided and executed could diverge
     return tool, out
 
 
@@ -118,9 +121,15 @@ class AuditLog:
         self.prev = "0" * 64
         self._lock = threading.Lock()
         if os.path.exists(path):
-            for line in open(path):
-                if line.strip():
-                    self.prev = json.loads(line)["entry_hash"]
+            for n, line in enumerate(open(path)):
+                if not line.strip():
+                    continue
+                e = json.loads(line)
+                h = e.pop("entry_hash")
+                body = hashlib.sha256(json.dumps(e, sort_keys=True).encode()).hexdigest()
+                if e.get("prev_hash") != self.prev or body != h:
+                    raise RuntimeError(f"audit chain broken at entry {n}: refusing to start")
+                self.prev = h
 
     def append(self, entry: dict) -> None:
         with self._lock:
@@ -129,6 +138,8 @@ class AuditLog:
             entry["entry_hash"] = h
             with open(self.path, "a") as f:
                 f.write(json.dumps(entry, sort_keys=True) + "\n")
+                f.flush()
+                os.fsync(f.fileno())
             self.prev = h
 
 
@@ -153,8 +164,12 @@ def _execute(cfg: BrokerConfig, inv: dict) -> dict:
                 return {"content": f.read()}
         if inv["tool"] == "write_file":
             content = args.get("content", "")
-            with open(real, "w") as f:
+            tmp = f"{real}.darm-tmp-{uuid.uuid4().hex}"
+            with open(tmp, "w") as f:
                 f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, real)   # atomic: old content or new, never partial
             return {"written": len(content)}
         if inv["tool"] == "list_dir":
             return {"entries": sorted(os.listdir(real))}
@@ -198,54 +213,98 @@ class Broker:
         return inv, tool, {"decision": "admit"}
 
     def handle(self, obj) -> dict:
-        with self._lock:   # check and consume atomically: no double-spend
+        """Evidence before effect. Never raises: any unexpected failure is
+        reported with effect 'unknown' rather than dropping the connection."""
+        try:
+            return self._handle(obj)
+        except Exception as e:
+            return {"decision": "error", "effect": "unknown",
+                    "error": f"{type(e).__name__}: {e}"}
+
+    def _handle(self, obj) -> dict:
+        rid = uuid.uuid4().hex
+        with self._lock:
             inv, tool, resp = self.decide(obj)
-            if resp["decision"] == "admit" and self.intents is not None:
-                self.intents.remove(tool)   # first occurrence, as List.erase
+            if resp["decision"] != "admit":
+                resp = dict(resp, request_id=rid, effect="none")
+                try:
+                    self._record(rid, "decision", inv, tool, resp)
+                    resp["evidence"] = "recorded"
+                except Exception:
+                    resp["evidence"] = "unrecorded"
+                return resp
+            try:
+                self._record(rid, "prepared", inv, tool, resp)
+            except Exception as e:
+                return {"decision": "reject", "request_id": rid, "effect": "none",
+                        "error": f"evidence unavailable, nothing performed: {type(e).__name__}"}
+            if self.intents is not None:
+                self.intents.remove(tool)
                 self._persist_intents()
                 resp = dict(resp, intent_consumed=tool)
-        if resp["decision"] == "admit":
-            result = _execute(self.cfg, inv)
-            resp = dict(resp, executed="error" not in result, **result)
-        return self._record(inv, tool, resp)
+        result = _execute(self.cfg, inv)
+        ok = "error" not in result
+        resp = dict(resp, request_id=rid, executed=ok,
+                    effect="succeeded" if ok else "failed", **result)
+        try:
+            self._record(rid, "outcome", inv, tool, resp)
+            resp["evidence"] = "recorded"
+        except Exception:
+            resp["evidence"] = "outcome_unrecorded"   # log shows prepared, no outcome
+        return resp
 
-    def _record(self, inv, tool, response: dict) -> dict:
+    def _record(self, rid, event, inv, tool, response: dict) -> None:
         self.audit.append({
-            "event": "decision",
+            "event": event,
+            "request_id": rid,
             "tool": tool,
             "invocation_hash": invocation_hash(inv) if inv else None,
-            "decision": response["decision"],
+            "decision": response.get("decision"),
+            "effect": response.get("effect"),
             "executed": response.get("executed", False),
             "intent_consumed": response.get("intent_consumed"),
             "failure": response.get("failure"),
             "error": response.get("error"),
         })
-        return response
 
     def _persist_intents(self) -> None:
         if self.intents_path:
             tmp = self.intents_path + ".tmp"
             with open(tmp, "w") as f:
                 f.write("".join(i + "\n" for i in self.intents))
+                f.flush()
+                os.fsync(f.fileno())
             os.replace(tmp, self.intents_path)
 
 
 # ---- Server -------------------------------------------------------------
 
+MAX_REQUEST = 1 << 20   # 1 MB per proposal
+
+
 class _Handler(socketserver.StreamRequestHandler):
     def handle(self):
-        for raw in self.rfile:
+        while True:
+            raw = self.rfile.readline(MAX_REQUEST + 1)
+            if not raw:
+                break
+            if len(raw) > MAX_REQUEST:
+                self._send({"decision": "reject", "effect": "none", "error": "request too large"})
+                break
             try:
                 obj = json.loads(raw)
             except Exception:
                 obj = None
-            resp = self.server.broker.handle(obj)
-            self.wfile.write((json.dumps(resp) + "\n").encode())
-            self.wfile.flush()
+            self._send(self.server.broker.handle(obj))
+
+    def _send(self, resp: dict) -> None:
+        self.wfile.write((json.dumps(resp) + "\n").encode())
+        self.wfile.flush()
 
 
 class _Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     daemon_threads = True
+    request_queue_size = 64
 
 
 def load_intents(path: str) -> list:
@@ -293,12 +352,18 @@ class BrokerClient:
         self.socket_path = socket_path
 
     def propose(self, tool: str, args: dict) -> dict:
+        """Nothing sent: reject (nothing can have happened). Sent, but no
+        valid reply: unknown (the effect may have happened)."""
         import socket
         msg = {"tool": tool, "args": [[k, str(v)] for k, v in args.items()]}
         try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-                s.settimeout(10)
-                s.connect(self.socket_path)
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.settimeout(10)
+            s.connect(self.socket_path)
+        except Exception as e:
+            return {"decision": "reject", "effect": "none", "error": f"broker unavailable: {e}"}
+        try:
+            with s:
                 s.sendall((json.dumps(msg) + "\n").encode())
                 data = b""
                 while not data.endswith(b"\n"):
@@ -308,8 +373,8 @@ class BrokerClient:
                     data += chunk
             return json.loads(data)
         except Exception as e:
-            return {"decision": "reject", "error": f"broker unavailable: {e}"}
-
+            return {"decision": "unknown", "effect": "unknown",
+                    "error": f"no valid reply after sending: {e}"}
 
 if __name__ == "__main__":
     main()
