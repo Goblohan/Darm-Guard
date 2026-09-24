@@ -52,10 +52,10 @@ def swap_out():
 
 # P1a: swapped after the decision, before execution starts
 orig_exec, fired = B._execute, [False]
-def swap_then_exec(cfg, inv):
+def swap_then_exec(cfg, inv, *rest):
     if any(a["value"].endswith("p1a.md") for a in inv["args"]):
         swap_in(); fired[0] = True
-    return orig_exec(cfg, inv)
+    return orig_exec(cfg, inv, *rest)
 rm(f"{OUT}/p1a.md")
 B._execute = swap_then_exec
 try:
@@ -90,11 +90,11 @@ report(f"P1b symlink swap inside the resolution-to-write window (hook: {hook})",
 
 # P2: a foreign writer changes the target between 'prepared' and the effect
 orig_exec, fired = B._execute, [False]
-def foreign_then_exec(cfg, inv):
+def foreign_then_exec(cfg, inv, *rest):
     if any(a["value"].endswith("p2.md") for a in inv["args"]):
         open(f"{WS}/reports/p2.md", "w").write("FOREIGN WRITE")
         fired[0] = True
-    return orig_exec(cfg, inv)
+    return orig_exec(cfg, inv, *rest)
 open(f"{WS}/reports/p2.md", "w").write("BEFORE")
 B._execute = foreign_then_exec
 try:
@@ -102,7 +102,8 @@ try:
     r = b.handle(wprop("p2.md", "BROKER WRITE"))
 finally:
     B._execute = orig_exec
-flagged = "conflict" in json.dumps(r).lower() or r.get("effect") != "succeeded"
+final2 = open(f"{WS}/reports/p2.md").read()
+flagged = "conflict" in json.dumps(r).lower() and final2 == "FOREIGN WRITE"
 report("P2 foreign write between prepared and effect", flagged,
        f"final={open(f'{WS}/reports/p2.md').read()!r}; effect={r.get('effect')}; "
        f"reconciliation={r.get('reconciliation')}", fired[0])

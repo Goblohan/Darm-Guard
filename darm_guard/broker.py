@@ -23,6 +23,7 @@ import hashlib
 import json
 import os
 import socketserver
+import ctypes
 import stat
 import threading
 import uuid
@@ -218,6 +219,67 @@ def _real_in_workspace(cfg: BrokerConfig, path: str) -> Optional[str]:
 
 _ESCAPE = {"error": "path escapes workspace or crosses a symlink"}
 
+_libc = ctypes.CDLL(None, use_errno=True)
+_RENAME_NOREPLACE, _RENAME_EXCHANGE = 1, 2
+
+
+def _renameat2(pfd: int, src: str, dst: str, flags: int) -> None:
+    if not hasattr(_libc, "renameat2"):
+        raise NotImplementedError("renameat2 unavailable")
+    if _libc.renameat2(pfd, src.encode(), pfd, dst.encode(), flags) != 0:
+        err = ctypes.get_errno()
+        raise OSError(err, os.strerror(err))
+
+
+def _digest_at(pfd: int, name: str) -> str:
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=pfd)
+    with os.fdopen(fd, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def _cas_replace(pfd: int, tmp: str, leaf: str, expected):
+    """Compare-and-swap against the recorded before-state (fixes probe P2).
+    Present target: atomically EXCHANGE, inspect what was displaced, and
+    exchange back if it was not the recorded state (the foreign change is
+    restored). Absent target: rename with NOREPLACE. Returns None on success,
+    or a conflict message. Falls back to compare-then-rename, which has a
+    small window, only when renameat2 is unavailable."""
+    if expected is None or expected[0] == "unavailable":
+        os.replace(tmp, leaf, src_dir_fd=pfd, dst_dir_fd=pfd)
+        return None
+    try:
+        if expected[0] == "absent":
+            try:
+                _renameat2(pfd, tmp, leaf, _RENAME_NOREPLACE)
+            except FileExistsError:
+                os.unlink(tmp, dir_fd=pfd)
+                return "conflict: target appeared since it was recorded; write not applied"
+            return None
+        _renameat2(pfd, tmp, leaf, _RENAME_EXCHANGE)
+        if _digest_at(pfd, tmp) != expected[1]:
+            _renameat2(pfd, tmp, leaf, _RENAME_EXCHANGE)
+            os.unlink(tmp, dir_fd=pfd)
+            return ("conflict: target changed since it was recorded; "
+                    "the change was restored and the write not applied")
+        os.unlink(tmp, dir_fd=pfd)
+        return None
+    except NotImplementedError:
+        current = _leaf_state(pfd, leaf)
+        if current != tuple(expected):
+            os.unlink(tmp, dir_fd=pfd)
+            return "conflict (fallback check): target changed since it was recorded"
+        os.replace(tmp, leaf, src_dir_fd=pfd, dst_dir_fd=pfd)
+        return None
+
+
+def _leaf_state(pfd: int, leaf: str):
+    kind = _leaf_kind(pfd, leaf)
+    if kind is None:
+        return ("absent", None)
+    if kind != stat.S_IFREG:
+        return ("unavailable", "target is not a regular file")
+    return ("present", _digest_at(pfd, leaf))
+
 
 def _open_parent(cfg: BrokerConfig, path: str):
     """Race-free resolution (fixes probe P1): open the workspace, then each
@@ -270,7 +332,7 @@ def _observe(cfg: BrokerConfig, path: str):
         os.close(pfd)
 
 
-def _execute(cfg: BrokerConfig, inv: dict) -> dict:
+def _execute(cfg: BrokerConfig, inv: dict, expected=None) -> dict:
     """Run an admitted invocation through handles pinned at resolution time."""
     args = {a["key"]: a["value"] for a in inv["args"]}
     opened = _open_parent(cfg, args.get("path", ""))
@@ -293,7 +355,9 @@ def _execute(cfg: BrokerConfig, inv: dict) -> dict:
                 f.write(content)
                 f.flush()
                 os.fsync(f.fileno())
-            os.replace(tmp, leaf, src_dir_fd=pfd, dst_dir_fd=pfd)  # atomic, in the checked directory
+            conflict = _cas_replace(pfd, tmp, leaf, expected)
+            if conflict:
+                return {"error": conflict, "conflict": True}
             os.fsync(pfd)
             return {"written": len(content)}
         if inv["tool"] == "list_dir":
@@ -386,7 +450,7 @@ class Broker:
                 self._persist_intents()
                 resp = dict(resp, intent_consumed=tool)
 
-        result = _execute(self.cfg, inv)
+        result = _execute(self.cfg, inv, before)
         ok = "error" not in result
 
         response_fields = dict(
