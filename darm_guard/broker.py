@@ -392,6 +392,7 @@ class Broker:
         self.intents = list(intents) if intents is not None else None
         self.intents_path = intents_path
         self._lock = threading.Lock()
+        self._keys = {}   # idempotency key -> {rid, hash, state, effect}
 
     def decide(self, obj, now=None):
         """Pure B1 brokerStep: no execution, no audit.
@@ -426,6 +427,13 @@ class Broker:
 
     def _handle(self, obj, peer=None) -> dict:
         rid = uuid.uuid4().hex
+        key = None
+        if isinstance(obj, dict) and "idempotency_key" in obj:
+            key = obj["idempotency_key"]
+            obj = {k: v for k, v in obj.items() if k != "idempotency_key"}
+            if not isinstance(key, str) or not key or len(key) > 128:
+                return {"decision": "reject", "request_id": rid, "effect": "none",
+                        "error": "malformed idempotency key"}
         with self._lock:
             last = self.audit.last_ts
             if last and datetime.now() < last - timedelta(seconds=5):
@@ -440,6 +448,26 @@ class Broker:
             inv, tool, resp = self.decide(obj)
             if peer:
                 resp = dict(resp, peer=peer)
+            if key is not None:
+                resp = dict(resp, idempotency_key=key)
+                prior = self._keys.get(key)
+                if prior is not None:
+                    if inv is None or prior["hash"] != invocation_hash(inv):
+                        dup = {"decision": "reject", "request_id": rid, "effect": "none",
+                               "error": "idempotency key already used for a different invocation"}
+                    elif prior["state"] == "done":
+                        dup = {"decision": "admit", "request_id": rid, "effect": "already_applied",
+                               "original_request_id": prior["rid"],
+                               "original_effect": prior.get("effect")}
+                    else:
+                        dup = {"decision": "reject", "request_id": rid, "effect": "none",
+                               "error": "a request with this idempotency key is unresolved"}
+                    dup["peer"] = peer
+                    try:
+                        self._record(rid, "duplicate", inv, tool, dup)
+                    except Exception:
+                        pass
+                    return dup
             if resp["decision"] != "admit":
                 resp = dict(resp, request_id=rid, effect="none")
                 try:
@@ -459,6 +487,7 @@ class Broker:
                     resp,
                     before_state=before,
                     intended_state=intended,
+                    target=real,
                 )
 
             try:
@@ -466,6 +495,8 @@ class Broker:
             except Exception as e:
                 return {"decision": "reject", "request_id": rid, "effect": "none",
                         "error": f"evidence unavailable, nothing performed: {type(e).__name__}"}
+            if key is not None:
+                self._keys[key] = {"rid": rid, "hash": invocation_hash(inv), "state": "pending"}
             if self.intents is not None:
                 self.intents.remove(tool)
                 self._persist_intents()
@@ -496,6 +527,8 @@ class Broker:
             resp["evidence"] = "recorded"
         except Exception:
             resp["evidence"] = "outcome_unrecorded"   # log shows prepared, no outcome
+        if key is not None:
+            self._keys[key] = dict(self._keys[key], state="done", effect=resp.get("effect"))
         return resp
 
     def _record(self, rid, event, inv, tool, response: dict) -> None:
@@ -510,12 +543,52 @@ class Broker:
             "intent_consumed": response.get("intent_consumed"),
             "reconciliation": response.get("reconciliation"),
             "peer": response.get("peer"),
+            "target": response.get("target"),
+            "idempotency_key": response.get("idempotency_key"),
             "before_state": response.get("before_state"),
             "intended_state": response.get("intended_state"),
             "observed_state": response.get("observed_state"),
             "failure": response.get("failure"),
             "error": response.get("error"),
         })
+
+    def reconcile_pending(self) -> int:
+        """Startup reconciliation (fixes probe P3). Every request left
+        prepared-without-outcome is observed through the race-free walk and
+        classified by B5's rule; the verdict is appended as a 'reconciled'
+        record. Also rebuilds the idempotency-key table from the log."""
+        if not os.path.exists(self.audit.path):
+            return 0
+        prepared, closed = {}, {}
+        for line in open(self.audit.path):
+            if not line.strip():
+                continue
+            e = json.loads(line)
+            rid = e.get("request_id")
+            if e.get("event") == "prepared":
+                prepared[rid] = e
+            elif e.get("event") in ("outcome", "reconciled"):
+                closed[rid] = e.get("effect") or e.get("reconciliation")
+        n = 0
+        for rid, e in prepared.items():
+            if rid not in closed:
+                target, before, intended = e.get("target"), e.get("before_state"), e.get("intended_state")
+                if target and intended:
+                    observed = _observe(self.cfg, target)
+                    verdict = _reconcile(tuple(before) if before else None, tuple(intended), observed)
+                else:
+                    observed, verdict = None, "unresolved"
+                self.audit.append({"event": "reconciled", "request_id": rid,
+                                   "tool": e.get("tool"), "target": target,
+                                   "invocation_hash": e.get("invocation_hash"),
+                                   "reconciliation": verdict, "observed_state": observed})
+                closed[rid] = verdict
+                n += 1
+            k = e.get("idempotency_key")
+            if k:
+                self._keys[k] = {"rid": rid, "hash": e.get("invocation_hash"),
+                                 "state": "done", "effect": closed.get(rid)}
+        return n
 
     def _persist_intents(self) -> None:
         if self.intents_path:
@@ -602,6 +675,7 @@ def serve(cfg: BrokerConfig, socket_path: str, audit_path: str,
     os.chmod(socket_path, 0o600)
     srv.broker = Broker(cfg, KernelClient(kernel_path), AuditLog(audit_path),
                         load_intents(intents_path) if intents_path else None, intents_path)
+    srv.broker.reconcile_pending()
     return srv
 
 
