@@ -139,6 +139,8 @@ Each layer's claim is weaker than the one above it, and none inherits another's.
 
 ## What is and is not guaranteed
 
+The full threat model, trusted computing base, and assumption list are in [THREAT_MODEL.md](THREAT_MODEL.md).
+
 The v0.1 DARMGuard API operates at the **tool-name** level, and the notes below apply to it. For argument-level, kernel-computed decisions, use KernelGuard (above). It is grounded in a machine-checked Lean theory, but the Python runtime itself is not formally verified.
 
 **Guaranteed by the runtime:**
