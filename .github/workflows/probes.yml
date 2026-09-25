@@ -74,3 +74,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/rename_tool.py
+
+      - name: rename_file, crash recovery at every phase
+        run: |
+          ./tests/setup_demo.sh
+          python tests/rename_crash.py

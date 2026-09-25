@@ -842,13 +842,16 @@ class Broker:
         for rid, e in prepared.items():
             if rid not in closed:
                 target, before, intended = e.get("target"), e.get("before_state"), e.get("intended_state")
-                if target and intended:
+                if e.get("tool") == "rename_file":
+                    observed, verdict = None, self._recover_rename(e)
+                elif target and intended:
                     observed = _observe(self.cfg, target)
                     verdict = _reconcile(tuple(before) if before else None, tuple(intended), observed)
                 else:
                     observed, verdict = None, "unresolved"
                 self.audit.append({"event": "reconciled", "request_id": rid,
                                    "tool": e.get("tool"), "target": target,
+                                   "source": e.get("source"),
                                    "invocation_hash": e.get("invocation_hash"),
                                    "reconciliation": verdict, "observed_state": observed})
                 closed[rid] = verdict
@@ -862,6 +865,54 @@ class Broker:
                 self._keys[k] = {"rid": rid, "hash": e.get("invocation_hash"),
                                  "state": state, "effect": v}
         return n
+
+    def _recover_rename(self, e) -> str:
+        """B9's recover, at startup. Act on the private name the prepared record
+        named: the new attestation (this request, naming the destination) and a
+        free destination roll forward; anything else rolls back with the original
+        attestation. If that cannot complete, the file stays at the private name,
+        which the evidence names, and the verdict is unresolved. Then classify
+        the pair of paths."""
+        src, dst, private = e.get("source"), e.get("target"), e.get("private")
+        before, intended = e.get("before_state"), e.get("intended_state")
+        sopen, dopen = _open_parent(self.cfg, src or ""), _open_parent(self.cfg, dst or "")
+        if sopen is None or dopen is None or not private:
+            for o in (sopen, dopen):
+                if o:
+                    os.close(o[0])
+            return "unresolved"
+        (sfd, sleaf), (dfd, dleaf) = sopen, dopen
+        try:
+            if _leaf_kind(sfd, private) is not None:
+                raw = None
+                try:
+                    fd = os.open(private, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=sfd)
+                    try:
+                        raw = os.getxattr(fd, XATTR)
+                    finally:
+                        os.close(fd)
+                except OSError:
+                    pass
+                a = _check_attestation(self.key, raw) if (raw and self.key) else None
+                reattested = bool(a and a.get("target") == dst and a.get("rid") == e.get("request_id"))
+                if reattested and _leaf_kind(dfd, dleaf) is None:
+                    _renameat2(sfd, private, dleaf, _RENAME_NOREPLACE, dst_fd=dfd)   # roll forward
+                else:
+                    _set_att(sfd, private, e.get("source_attestation"))              # roll back
+                    _renameat2(sfd, private, sleaf, _RENAME_NOREPLACE)
+                os.fsync(sfd)
+                os.fsync(dfd)
+        except OSError:
+            return "unresolved"
+        finally:
+            os.close(sfd)
+            os.close(dfd)
+        src_now, dst_now = _observe(self.cfg, src), _observe(self.cfg, dst)
+        if intended and dst_now == tuple(intended) and src_now[0] == "absent":
+            return "confirmedSuccess"
+        if before and src_now == tuple(before) and dst_now == tuple(e.get("destination_before") or ()):
+            return "confirmedFailure"
+        return "unresolved"
 
     def _persist_intents(self) -> None:
         if self.intents_path:
