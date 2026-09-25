@@ -68,6 +68,17 @@ r = send({"tool": "delete_file", "args": [["path", "/workspace/notes.txt"]]})
 check("delete outside the delete policy rejected; notes.txt survives",
       r.get("decision") == "reject" and os.path.exists(f"{D}/workspace/notes.txt"))
 
+send({"tool": "write_file", "args": [["path", "/workspace/reports/e2e_mv1.md"], ["content", "moving"]]})
+r = send({"tool": "rename_file", "args": [["path", "/workspace/reports/e2e_mv1.md"],
+                                          ["destination", "/workspace/reports/e2e_mv2.md"]]})
+check("rename_file moves a broker-written file",
+      r.get("effect") == "succeeded" and not os.path.exists(f"{D}/workspace/reports/e2e_mv1.md")
+      and open(f"{D}/workspace/reports/e2e_mv2.md").read() == "moving")
+check("verify_world clean for both paths after the rename",
+      not [x for x in B.verify_world(cfg, AUDIT, key)["findings"] if "e2e_mv" in x["target"]])
+check("no private file left behind",
+      not [n for n in os.listdir(f"{D}/workspace/reports") if ".darm-tmp-" in n])
+
 try:
     B.serve(cfg, "/tmp/darm-e2e-2.sock", AUDIT).server_close()
     second = True
