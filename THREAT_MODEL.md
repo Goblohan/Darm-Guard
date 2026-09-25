@@ -39,7 +39,7 @@ Every guarantee below rests on stated assumptions, and every assumption has a st
 
 | | Assumption | Status | Evidence, and what is not covered |
 |---|---|---|---|
-| A1 | The agent's only route to a governed effect is the broker | **Monitored** | CI bypass tests in the reference deployment; verify_world detects a bypass that changes a governed file (CI canary). Not detected: bypasses that only read, or that write files the broker never governed |
+| A1 | The agent's only route to a governed effect is the broker | **Monitored** | CI bypass tests in the reference deployment; verify_world detects a bypass that changes a governed file (CI canary). Not detected: bypasses that only read, or that create files the broker never wrote (proved undetectable by B6's verification in R23, uncovered_creation_undetected) |
 | A2 | The agent cannot read or write the config, registry, intents, audit log, kernel binary, or attestation key | **Declared** | Deployer's file permissions; key created owner-only (0600); CI confirms the confined agent cannot read the key |
 | A3 | An append or write that returns after fsync is durable | **Declared** | Operating system guarantee; not tested under power loss |
 | A4 | Rename and exchange within one filesystem are atomic | **Declared** | POSIX and Linux guarantees; RENAME_EXCHANGE requires filesystem support |
