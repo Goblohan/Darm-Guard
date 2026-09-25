@@ -22,13 +22,22 @@ broker = B.Broker(cfg, KernelClient(), B.AuditLog(AUDIT), None, None, key)
 
 def project():
     """The real system, projected onto R23's World: (log, files)."""
-    log = []
+    # The model's log: successful write outcomes, plus writes closed by
+    # startup reconciliation as confirmedSuccess (digest from their prepared
+    # record). Shown necessary by tests/r23_crash.py.
+    log, prepared = [], {}
     if os.path.exists(AUDIT):
         for line in open(AUDIT):
             e = json.loads(line)
-            if (e.get("event") == "outcome" and e.get("tool") == "write_file"
-                    and e.get("effect") == "succeeded" and e.get("target")):
+            if e.get("event") == "prepared":
+                prepared[e["request_id"]] = e
+            if e.get("tool") != "write_file" or not e.get("target"):
+                continue
+            if e.get("event") == "outcome" and e.get("effect") == "succeeded":
                 log.append((e["request_id"], e["target"], e["intended_state"][1]))
+            elif (e.get("event") == "reconciled" and e.get("reconciliation") == "confirmedSuccess"
+                  and e["request_id"] in prepared):
+                log.append((e["request_id"], e["target"], prepared[e["request_id"]]["intended_state"][1]))
     files = {}
     for dirpath, _, names in os.walk(WS):
         for n in names:

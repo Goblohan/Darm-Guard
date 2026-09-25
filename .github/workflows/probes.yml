@@ -44,3 +44,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/r23_correspondence.py
+
+      - name: R23 correspondence across a crash
+        run: |
+          ./tests/setup_demo.sh
+          python tests/r23_crash.py
