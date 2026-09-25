@@ -49,3 +49,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/r23_crash.py
+
+      - name: R23 correspondence under conflicts
+        run: |
+          ./tests/setup_demo.sh
+          python tests/r23_conflict.py
