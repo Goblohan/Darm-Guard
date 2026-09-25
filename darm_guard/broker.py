@@ -110,9 +110,13 @@ def _target_state(path: str):
 def _intended_state(inv: dict):
     """Derive the B5 intended target state from the frozen invocation.
 
-    Currently defined only for write_file. The intended content comes from
+    Defined for write_file (target present with the content's digest) and
+    delete_file (target absent). The intended content comes from
     the canonical invocation, never from the post-effect filesystem state.
     """
+    if inv.get("tool") == "delete_file":
+        args = {a["key"]: a["value"] for a in inv["args"]}
+        return ("absent", None) if isinstance(args.get("path"), str) else None
     if inv.get("tool") != "write_file":
         return None
 
@@ -283,6 +287,38 @@ def _cas_replace(pfd: int, tmp: str, leaf: str, expected):
         return None
 
 
+def _cas_delete(pfd: int, leaf: str, expected):
+    """Compare-and-delete against the recorded before-state, by the same
+    exchange-inspect-undo pattern as writes. The target is renamed (NOREPLACE)
+    to a private name in the same directory; what was actually moved is then
+    inspected, and unlinked only if it is the recorded state. Otherwise it is
+    renamed back (the foreign change is restored) and nothing is deleted.
+    Returns None on success, or an error or conflict message. Without
+    renameat2, falls back to check-then-unlink, which has a small window."""
+    if expected is None or expected[0] != "present":
+        return "target absent or not a regular file; nothing deleted"
+    tmp = f".{leaf}.darm-tmp-del-{uuid.uuid4().hex}"
+    try:
+        _renameat2(pfd, leaf, tmp, _RENAME_NOREPLACE)
+    except FileNotFoundError:
+        return "conflict: target disappeared since it was recorded; nothing deleted"
+    except NotImplementedError:
+        if _leaf_state(pfd, leaf) != tuple(expected):
+            return "conflict (fallback check): target changed since it was recorded; nothing deleted"
+        os.unlink(leaf, dir_fd=pfd)
+        return None
+    if _leaf_kind(pfd, tmp) != stat.S_IFREG or _digest_at(pfd, tmp) != expected[1]:
+        try:
+            _renameat2(pfd, tmp, leaf, _RENAME_NOREPLACE)
+        except FileExistsError:
+            return (f"conflict: target changed and its name was re-created; "
+                    f"the displaced file is kept as {tmp}; nothing deleted")
+        return ("conflict: target changed since it was recorded; "
+                "the change was restored and nothing deleted")
+    os.unlink(tmp, dir_fd=pfd)
+    return None
+
+
 def _leaf_state(pfd: int, leaf: str):
     kind = _leaf_kind(pfd, leaf)
     if kind is None:
@@ -400,6 +436,12 @@ def _execute(cfg: BrokerConfig, inv: dict, expected=None, attest=None) -> dict:
                 return {"error": conflict, "conflict": True}
             os.fsync(pfd)
             return {"written": len(content), "attested": attested}
+        if inv["tool"] == "delete_file":
+            conflict = _cas_delete(pfd, leaf, expected)
+            if conflict:
+                return {"error": conflict, "conflict": conflict.startswith("conflict")}
+            os.fsync(pfd)
+            return {"deleted": True}
         if inv["tool"] == "list_dir":
             fd = os.open(leaf, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=pfd)
             try:
@@ -445,6 +487,13 @@ def _basis(resp: dict) -> list:
               ["DARM.EffectIntegrity.cas_applies_iff"],
               ["A4", "renameat2 available: no window" if _HAS_RENAMEAT2 else
                "renameat2 unavailable: compare-then-rename fallback, small window, not covered by B6"])
+    if eff == "succeeded" and resp.get("deleted"):
+        claim("the target is absent, and verification will not flag this deletion",
+              ["DARM.EffectIntegrity2.legitimate_ops_never_flagged"], ["A4"])
+        claim("deleted only from the recorded before-state", [],
+              ["A4", "tested, not modelled: B6's compare-and-swap model covers writes only",
+               "renameat2 available: no window" if _HAS_RENAMEAT2 else
+               "renameat2 unavailable: check-then-unlink fallback, small window"])
     if resp.get("conflict"):
         claim("conflict: the foreign state was left intact", ["DARM.EffectIntegrity.cas_conflict_preserves"], ["A4"])
     if resp.get("reconciliation") == "confirmedSuccess":

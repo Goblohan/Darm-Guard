@@ -59,3 +59,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/delete_typed_log.py
+
+      - name: delete_file against its predictions
+        run: |
+          ./tests/setup_demo.sh
+          python tests/delete_tool.py

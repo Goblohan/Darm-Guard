@@ -27,7 +27,7 @@ CASES = [
                                               "args": [["path", "/workspace/other.txt"]],
                                               "prov": "authoritative"}),
      lambda r: r["decision"] == "reject" and "malformed" in err(r)),
-    ("unknown tool", lambda: c.propose("delete_file", {"path": "/workspace/notes.txt"}),
+    ("unknown tool", lambda: c.propose("shell_exec", {"path": "/workspace/notes.txt"}),
      lambda r: r["decision"] == "reject" and r.get("failure") == "observation"),
     ("list registered dir", lambda: c.propose("list_dir", {"path": "/workspace/docs"}),
      lambda r: r["decision"] == "admit" and "entries" in r),

@@ -14,8 +14,9 @@ cat > "$D/config.json" << 'EOF'
    {"tool": "read_file",  "rules": [{"key": "path", "allowedValues": [], "allowedPrefixes": ["/workspace/"]}]},
    {"tool": "list_dir",   "rules": [{"key": "path", "allowedValues": [], "allowedPrefixes": ["/workspace/"]}]},
    {"tool": "write_file", "rules": [{"key": "path", "allowedValues": [], "allowedPrefixes": ["/workspace/"]},
-                                    {"key": "content", "allowedValues": [], "allowedPrefixes": [""], "payload": true}]}]},
- "credential_tools": ["read_file", "list_dir", "write_file"],
+                                    {"key": "content", "allowedValues": [], "allowedPrefixes": [""], "payload": true}]},
+   {"tool": "delete_file", "rules": [{"key": "path", "allowedValues": [], "allowedPrefixes": ["/workspace/reports/"]}]}]},
+ "credential_tools": ["read_file", "list_dir", "write_file", "delete_file"],
  "workspace": "/tmp/darmdemo/workspace"}
 EOF
 printf '/workspace/notes.txt\n/workspace/link.txt\n/workspace/../secret.txt\n/workspace/docs\n/workspace/reports/*\n' > "$D/registry.txt"

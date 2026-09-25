@@ -20,6 +20,8 @@ Every guarantee below rests on stated assumptions, and every assumption has a st
 | Reconciliation reports state correspondence, never causation | B5 | Probe P3 |
 | Writes apply only from the recorded state; conflicts leave the foreign state intact | B6 | Probe P2 |
 | A keyed request, submitted any number of times, performs at most one effect, and 'already applied' is reported only when that effect occurred | B7, B7b | Probes P7, P11, P12 |
+| A broker deletion removes a file only from its recorded state; a conflicting change is restored and nothing is deleted | Tested (tests/delete_tool.py), not modelled: B6's compare-and-swap covers writes only | Delete race test |
+| Legitimate deletions verify clean, while foreign deletions and tampering are detected | B8 | tests/delete_typed_log.py, tests/delete_tool.py |
 | A governed file changed outside the broker, or a dropped log entry whose file survives, is detected | B6 | Probes P8, P9; CI canary |
 | A path cannot be redirected between check and use | By construction (handle walk, no symlinks followed) | Probes P1a, P1b; not modeled formally |
 
