@@ -84,3 +84,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/rename_recovery_edges.py
+
+      - name: rename_file, recovery's own crash window, and self-renames
+        run: |
+          ./tests/setup_demo.sh
+          python tests/rename_recovery_window.py

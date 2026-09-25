@@ -505,6 +505,10 @@ def _execute(cfg: BrokerConfig, inv: dict, expected=None, attest=None,
             os.fsync(pfd)
             return {"written": len(content), "attested": attested}
         if inv["tool"] == "rename_file":
+            if args.get("destination") == args.get("path"):
+                # outside B9's model (its slots are distinct), and recovery could
+                # not tell a finished self-rename from an interrupted roll-back
+                return {"error": "source and destination are the same; nothing renamed"}
             dopened = _open_parent(cfg, args.get("destination", ""))
             if dopened is None:
                 return dict(_ESCAPE)
