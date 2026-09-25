@@ -79,3 +79,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/rename_crash.py
+
+      - name: rename_file, recovery edge cases (B9, all or nothing)
+        run: |
+          ./tests/setup_demo.sh
+          python tests/rename_recovery_edges.py

@@ -359,8 +359,8 @@ def _rename_protocol(sfd, sleaf, dfd, dleaf, expected, attest, private, old_att)
     try:
         _renameat2(sfd, private, dleaf, _RENAME_NOREPLACE, dst_fd=dfd)        # 4. place
     except FileExistsError:
-        _set_att(sfd, private, old_att)
-        _renameat2(sfd, private, sleaf, _RENAME_NOREPLACE)
+        _renameat2(sfd, private, sleaf, _RENAME_NOREPLACE)   # move first (B9: all or nothing)
+        _set_att(sfd, sleaf, old_att)                        # then restore our evidence
         return ("conflict: destination exists; the source was restored with its "
                 "original attestation and nothing renamed")
     os.fsync(sfd)
@@ -898,8 +898,21 @@ class Broker:
                 if reattested and _leaf_kind(dfd, dleaf) is None:
                     _renameat2(sfd, private, dleaf, _RENAME_NOREPLACE, dst_fd=dfd)   # roll forward
                 else:
-                    _set_att(sfd, private, e.get("source_attestation"))              # roll back
+                    # roll back, all or nothing (B9): move first; restore the original
+                    # attestation only after the move, and only onto our own content
+                    ours = (before and before[0] == "present"
+                            and _leaf_kind(sfd, private) == stat.S_IFREG
+                            and _digest_at(sfd, private) == before[1])
                     _renameat2(sfd, private, sleaf, _RENAME_NOREPLACE)
+                    if ours:
+                        _set_att(sfd, sleaf, e.get("source_attestation"))
+            elif (before and before[0] == "present"
+                  and _leaf_kind(sfd, sleaf) == stat.S_IFREG
+                  and _digest_at(sfd, sleaf) == before[1]):
+                # re-runnable: a crash after the move back but before the restore
+                # leaves our content at the source with the wrong attestation
+                if _read_attestation(self.cfg, src) != e.get("source_attestation"):
+                    _set_att(sfd, sleaf, e.get("source_attestation"))
                 os.fsync(sfd)
                 os.fsync(dfd)
         except OSError:
