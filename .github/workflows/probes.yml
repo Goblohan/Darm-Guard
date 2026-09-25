@@ -39,3 +39,8 @@ jobs:
 
       - name: Adversarial probes (all must hold)
         run: python tests/adversarial_probes.py
+
+      - name: R23 runtime correspondence (sampled)
+        run: |
+          ./tests/setup_demo.sh
+          python tests/r23_correspondence.py
