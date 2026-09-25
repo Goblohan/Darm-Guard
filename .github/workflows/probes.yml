@@ -69,3 +69,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/b8_correspondence.py
+
+      - name: rename_file, live protocol, against its predictions
+        run: |
+          ./tests/setup_demo.sh
+          python tests/rename_tool.py

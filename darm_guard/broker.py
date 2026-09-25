@@ -238,10 +238,11 @@ _RENAME_NOREPLACE, _RENAME_EXCHANGE = 1, 2
 _HAS_RENAMEAT2 = hasattr(_libc, "renameat2")
 
 
-def _renameat2(pfd: int, src: str, dst: str, flags: int) -> None:
+def _renameat2(pfd: int, src: str, dst: str, flags: int, dst_fd=None) -> None:
     if not hasattr(_libc, "renameat2"):
         raise NotImplementedError("renameat2 unavailable")
-    if _libc.renameat2(pfd, src.encode(), pfd, dst.encode(), flags) != 0:
+    dfd = pfd if dst_fd is None else dst_fd
+    if _libc.renameat2(pfd, src.encode(), dfd, dst.encode(), flags) != 0:
         err = ctypes.get_errno()
         raise OSError(err, os.strerror(err))
 
@@ -317,6 +318,72 @@ def _cas_delete(pfd: int, leaf: str, expected):
                 "the change was restored and nothing deleted")
     os.unlink(tmp, dir_fd=pfd)
     return None
+
+
+def _set_att(pfd: int, name: str, value) -> None:
+    """Set (or, for None, remove) a file's attestation, by handle."""
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=pfd)
+    try:
+        if value is None:
+            try:
+                os.removexattr(fd, XATTR)
+            except OSError:
+                pass
+        else:
+            os.setxattr(fd, XATTR, value.encode() if isinstance(value, str) else value)
+    finally:
+        os.close(fd)
+
+
+def _rename_protocol(sfd, sleaf, dfd, dleaf, expected, attest, private, old_att):
+    """B9: claim, inspect, re-attest, place. The private name and the original
+    attestation are named in the prepared record before the claim, so a crash
+    at any step leaves the file where the evidence points. Returns None on
+    success, or an error or conflict message. No fallback without renameat2."""
+    if expected is None or expected[0] != "present":
+        return "source absent or not a regular file; nothing renamed"
+    if not private:
+        return "no private name recorded; nothing renamed"
+    try:
+        _renameat2(sfd, sleaf, private, _RENAME_NOREPLACE)                    # 1. claim
+    except FileNotFoundError:
+        return "conflict: source disappeared since it was recorded; nothing renamed"
+    except NotImplementedError:
+        return "renameat2 unavailable: rename is not supported without it; nothing renamed"
+    if _leaf_kind(sfd, private) != stat.S_IFREG or _digest_at(sfd, private) != expected[1]:
+        _renameat2(sfd, private, sleaf, _RENAME_NOREPLACE)                    # 2. inspect: restore
+        return "conflict: source changed since it was recorded; the change was restored and nothing renamed"
+    if attest is not None:                                                     # 3. re-attest
+        key, rid, target = attest
+        _set_att(sfd, private, _attestation(key, rid, target, expected[1]))
+    try:
+        _renameat2(sfd, private, dleaf, _RENAME_NOREPLACE, dst_fd=dfd)        # 4. place
+    except FileExistsError:
+        _set_att(sfd, private, old_att)
+        _renameat2(sfd, private, sleaf, _RENAME_NOREPLACE)
+        return ("conflict: destination exists; the source was restored with its "
+                "original attestation and nothing renamed")
+    os.fsync(sfd)
+    os.fsync(dfd)
+    return None
+
+
+def _read_attestation(cfg, path: str):
+    """The file's current attestation as text, or None."""
+    opened = _open_parent(cfg, path)
+    if opened is None:
+        return None
+    pfd, leaf = opened
+    try:
+        fd = os.open(leaf, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=pfd)
+        try:
+            return os.getxattr(fd, XATTR).decode()
+        finally:
+            os.close(fd)
+    except OSError:
+        return None
+    finally:
+        os.close(pfd)
 
 
 def _leaf_state(pfd: int, leaf: str):
@@ -400,7 +467,8 @@ def _observe(cfg: BrokerConfig, path: str):
         os.close(pfd)
 
 
-def _execute(cfg: BrokerConfig, inv: dict, expected=None, attest=None) -> dict:
+def _execute(cfg: BrokerConfig, inv: dict, expected=None, attest=None,
+             private=None, old_att=None) -> dict:
     """Run an admitted invocation through handles pinned at resolution time."""
     args = {a["key"]: a["value"] for a in inv["args"]}
     opened = _open_parent(cfg, args.get("path", ""))
@@ -436,6 +504,20 @@ def _execute(cfg: BrokerConfig, inv: dict, expected=None, attest=None) -> dict:
                 return {"error": conflict, "conflict": True}
             os.fsync(pfd)
             return {"written": len(content), "attested": attested}
+        if inv["tool"] == "rename_file":
+            dopened = _open_parent(cfg, args.get("destination", ""))
+            if dopened is None:
+                return dict(_ESCAPE)
+            dfd, dleaf = dopened
+            try:
+                if _leaf_kind(dfd, dleaf) == stat.S_IFLNK:
+                    return dict(_ESCAPE)
+                err = _rename_protocol(pfd, leaf, dfd, dleaf, expected, attest, private, old_att)
+            finally:
+                os.close(dfd)
+            if err:
+                return {"error": err, "conflict": err.startswith("conflict")}
+            return {"renamed": True, "attested": attest is not None}
         if inv["tool"] == "delete_file":
             conflict = _cas_delete(pfd, leaf, expected)
             if conflict:
@@ -495,6 +577,16 @@ def _basis(resp: dict) -> list:
               ["A4", "the compare-and-delete implementation is tested against the model, not certified",
                "renameat2 available: no window" if _HAS_RENAMEAT2 else
                "renameat2 unavailable: check-then-unlink fallback, small window"])
+    if eff == "succeeded" and resp.get("renamed"):
+        claim("the file moved to the destination, re-attested under this request; "
+              "verification will not flag the source or the destination",
+              ["DARM.EffectIntegrity2.rename_preserves",
+               "DARM.EffectIntegrity2.legitimate_ops_never_flagged"], ["A4"])
+        claim("claimed, inspected, re-attested and placed: at no step was the file lost or duplicated",
+              ["DARM.RenameProtocol.our_file_never_lost_or_duplicated",
+               "DARM.RenameProtocol.recovery_normal"],
+              ["A4", "no foreign process guesses the private name",
+               "the implementation is tested against B9, not certified"])
     if resp.get("conflict"):
         claim("conflict: the foreign state was left intact", ["DARM.EffectIntegrity.cas_conflict_preserves"], ["A4"])
     if resp.get("reconciliation") == "confirmedSuccess":
@@ -638,6 +730,17 @@ class Broker:
                     target=real,
                 )
 
+            private = None
+            if tool == "rename_file":
+                args = {a["key"]: a["value"] for a in inv["args"]}
+                src, real = args.get("path", ""), args.get("destination", "")
+                before = _observe(self.cfg, src)
+                intended = (("present", before[1]) if before and before[0] == "present"
+                            else ("unavailable", "source is not a present regular file"))
+                private = f".{src.rsplit('/', 1)[-1]}.darm-tmp-mv-{uuid.uuid4().hex}"
+                resp = dict(resp, before_state=before, intended_state=intended, target=real,
+                            source=src, destination_before=_observe(self.cfg, real),
+                            private=private, source_attestation=_read_attestation(self.cfg, src))
             try:
                 self._record(rid, "prepared", inv, tool, resp)
             except Exception as e:
@@ -651,7 +754,8 @@ class Broker:
                 resp = dict(resp, intent_consumed=tool)
 
         result = _execute(self.cfg, inv, before,
-                          (self.key, rid, real) if self.key and intended is not None else None)
+                          (self.key, rid, real) if self.key and intended is not None else None,
+                          resp.get("private"), resp.get("source_attestation"))
         ok = "error" not in result
 
         response_fields = dict(
@@ -669,6 +773,16 @@ class Broker:
             response_fields["before_state"] = before
             response_fields["intended_state"] = intended
             response_fields["observed_state"] = observed
+            if tool == "rename_file":
+                src_now = _observe(self.cfg, resp["source"])
+                if observed == tuple(intended) and src_now[0] == "absent":
+                    verdict = "confirmedSuccess"
+                elif src_now == tuple(before) and observed == tuple(resp["destination_before"]):
+                    verdict = "confirmedFailure"
+                else:
+                    verdict = "unresolved"
+                response_fields["reconciliation"] = verdict
+                response_fields["source_observed"] = src_now
 
         resp = dict(resp, **response_fields)
         try:
@@ -695,6 +809,10 @@ class Broker:
             "reconciliation": response.get("reconciliation"),
             "peer": response.get("peer"),
             "target": response.get("target"),
+            "source": response.get("source"),
+            "private": response.get("private"),
+            "destination_before": response.get("destination_before"),
+            "source_attestation": response.get("source_attestation"),
             "idempotency_key": response.get("idempotency_key"),
             "before_state": response.get("before_state"),
             "intended_state": response.get("intended_state"),
@@ -823,6 +941,8 @@ def verify_world(cfg: BrokerConfig, audit_path: str, key: bytes) -> dict:
             # B8: the latest entry per target is typed (write or delete)
             latest[e["target"]] = (e["request_id"],
                                    "delete" if e.get("tool") == "delete_file" else "write")
+            if e.get("tool") == "rename_file" and e.get("source"):
+                latest[e["source"]] = (e["request_id"], "delete")
     root = cfg.workspace
     for dirpath, _dirs, files in os.walk(root, followlinks=False):
         for name in files:
