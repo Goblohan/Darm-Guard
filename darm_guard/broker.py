@@ -490,8 +490,9 @@ def _basis(resp: dict) -> list:
     if eff == "succeeded" and resp.get("deleted"):
         claim("the target is absent, and verification will not flag this deletion",
               ["DARM.EffectIntegrity2.legitimate_ops_never_flagged"], ["A4"])
-        claim("deleted only from the recorded before-state", [],
-              ["A4", "tested, not modelled: B6's compare-and-swap model covers writes only",
+        claim("deleted only from the recorded before-state",
+              ["DARM.EffectIntegrity.casOpt_applies_iff", "DARM.EffectIntegrity.delete_only_from_recorded"],
+              ["A4", "the compare-and-delete implementation is tested against the model, not certified",
                "renameat2 available: no window" if _HAS_RENAMEAT2 else
                "renameat2 unavailable: check-then-unlink fallback, small window"])
     if resp.get("conflict"):
