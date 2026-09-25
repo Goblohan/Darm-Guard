@@ -770,7 +770,9 @@ def verify_world(cfg: BrokerConfig, audit_path: str, key: bytes) -> dict:
         logged.add(e.get("request_id"))
         if e.get("event") in ("outcome", "reconciled") and e.get("target") and (
                 e.get("effect") == "succeeded" or e.get("reconciliation") == "confirmedSuccess"):
-            latest[e["target"]] = e["request_id"]
+            # B8: the latest entry per target is typed (write or delete)
+            latest[e["target"]] = (e["request_id"],
+                                   "delete" if e.get("tool") == "delete_file" else "write")
     root = cfg.workspace
     for dirpath, _dirs, files in os.walk(root, followlinks=False):
         for name in files:
@@ -783,7 +785,9 @@ def verify_world(cfg: BrokerConfig, audit_path: str, key: bytes) -> dict:
             except OSError:
                 if logical in latest:
                     findings.append({"target": logical, "finding":
-                        "the log records a broker write here but the file carries no attestation"})
+                        "the log records a broker write here but the file carries no attestation"
+                        if latest[logical][1] == "write" else
+                        "the log records a deletion but the file exists"})
                 continue
             a = _check_attestation(key, raw)
             if a is None or a.get("target") != logical:
@@ -794,11 +798,14 @@ def verify_world(cfg: BrokerConfig, audit_path: str, key: bytes) -> dict:
             if a["rid"] not in logged:
                 findings.append({"target": logical, "finding":
                     "attested request missing from the log (entries truncated or deleted)"})
-            elif latest.get(logical) not in (None, a["rid"]):
+            elif logical in latest and latest[logical][1] == "delete":
+                findings.append({"target": logical, "finding":
+                    "the log records a deletion but the file exists"})
+            elif logical in latest and latest[logical][0] != a["rid"]:
                 findings.append({"target": logical, "finding":
                     "file does not carry the log's latest write for this target"})
-    for target in latest:
-        if not os.path.exists(os.path.join(root, target[len(LOGICAL_ROOT):])):
+    for target, (_rid, op) in latest.items():
+        if op == "write" and not os.path.exists(os.path.join(root, target[len(LOGICAL_ROOT):])):
             findings.append({"target": target, "finding": "the log records a write but the file is gone"})
     return {"ok": not findings, "findings": findings}
 

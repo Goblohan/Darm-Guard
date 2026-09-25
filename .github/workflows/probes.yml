@@ -54,3 +54,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/r23_conflict.py
+
+      - name: verify_world with a typed log (B8)
+        run: |
+          ./tests/setup_demo.sh
+          python tests/delete_typed_log.py
