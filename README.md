@@ -74,6 +74,7 @@ The config holds the policy, the credential's tools, the workspace directory, an
 | A keyed request, retried any number of times, performs at most one effect; 'already applied' is reported only when that effect occurred | Proved in B7b (already_applied_sound, at_most_once_with_failures); probes P7, P11, P12. Without an idempotency key, a retry performs the write again |
 | A deletion removes a file only from its recorded state; legitimate deletions verify clean, foreign ones are detected | Proved in B6 Part 1b (casOpt_applies_iff, delete_only_from_recorded) and B8 (legitimate_ops_never_flagged); tests/delete_tool.py, tests/b8_correspondence.py |
 | A rename moves a file without losing or duplicating it, even across a crash, and re-attests it | Proved in B8 Part 2 (rename_preserves) and B9 (our_file_never_lost_or_duplicated, recovery_normal, late_occupation_restores); tests/rename_tool.py, tests/rename_crash.py. The implementation is tested against B9, not certified |
+| Evidence can be checked by anyone holding the public keys, and forged by no one without the private key | Ed25519 attestations (darm_guard/attest.py); tests/attest_ring.py, attest_broker.py, attest_stage4.py. Tested, not modelled |
 | Changes outside the broker, and dropped log entries, are detected | Proved in B6 (tamper_detected, truncation_detected); probes P8 and P9; a CI canary shows a bypass of the broker being caught |
 | Reconciliation reports state, not causation | Proved in B5 (success_is_state_confirmation); probe P3 |
 | The agent cannot vouch for itself | Proved in B1; enforced at the interface; attack-tested |
@@ -221,9 +222,10 @@ The conditions behind each check are proved in [darm-monitor](https://github.com
 - v0.8.1 -- corrects an overclaim: retry non-repetition was attributed to B6's final-state theorem; it holds for keyed requests and is now proved in B7.
 - v0.8.2 -- fixes 'already applied' being reported after a failed or unresolved keyed attempt (probes P11, P12); proved sound in B7b.
 - v0.9.0 -- delete_file, the first new tool since the hardening: compare-and-delete, a typed audit log so legitimate deletions verify clean (B8), and deletion covered by the compare-and-swap model (B6 Part 1b).
-- v0.10.2 (this release) -- a rename onto itself is refused: it lies outside B9's model, and after a crash recovery could not tell it from an interrupted roll-back. Rename recovery is tested through its own crash window (B9: recovery_crash_window_harmless).
+- v0.10.2 -- a rename onto itself is refused: it lies outside B9's model, and after a crash recovery could not tell it from an interrupted roll-back. Rename recovery is tested through its own crash window (B9: recovery_crash_window_harmless).
 - v0.10.1 -- rename recovery made all or nothing, as B9 proves: a blocked roll-back changes nothing, and recovery never alters foreign content.
 - v0.10.0 -- rename_file: the claim, inspect, re-attest, place protocol (B9), with startup recovery at every phase; a rename is a source delete and a destination write in the typed log (B8 Part 2).
+- v0.11.0 (this release) -- attestations are Ed25519 signatures verified against a public key ring, so verifying evidence no longer requires the power to forge it; legacy HMAC attestations are read, re-attested without laundering, then retired; key rotation. First declared dependency: cryptography.
 - Next -- an external audit checkpoint; in-flight revocation; per-resource intents and delegation; certifying the Python broker against B4-B6; publishing third-party comparisons with their maintainers.
 - Later -- credential-holding enforcement broker for one domain; gated credential expansion.
 

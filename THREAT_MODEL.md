@@ -24,6 +24,7 @@ Every guarantee below rests on stated assumptions, and every assumption has a st
 | Legitimate deletions verify clean, while foreign deletions and tampering are detected | B8 | tests/delete_typed_log.py, tests/delete_tool.py |
 | A rename never loses or duplicates the file, including across a crash, and rolls back with the original attestation on conflict | B9; B8 Part 2 (tested against the implementation, not certified) | tests/rename_tool.py, tests/rename_crash.py |
 | A governed file changed outside the broker, or a dropped log entry whose file survives, is detected | B6 | Probes P8, P9; CI canary |
+| Evidence can be verified without the power to forge it: attestations are Ed25519 signatures checked against a public key ring; a legacy v1 file is re-attested only if it still verifies and nothing else is wrong with it | Tested, not modelled | tests/attest_ring.py, attest_broker.py, attest_stage4.py; re-attestation refuses tampered files |
 | A path cannot be redirected between check and use | By construction (handle walk, no symlinks followed) | Probes P1a, P1b; not modeled formally |
 
 ## Trusted computing base
@@ -34,6 +35,7 @@ Every guarantee below rests on stated assumptions, and every assumption has a st
 | Lean compiler, runtime and JSON parser in the kernel binary | Trusted; answers differentially certified against K4 |
 | Python broker | Trusted; certified against B3 and E24 on sampled inputs; B4–B6 behaviour tested by probes, not certified |
 | Python interpreter, standard library, and libc (renameat2 via ctypes) | Trusted |
+| The cryptography library (Ed25519 signing and verification) | Trusted; the first declared dependency (0.11.0) |
 | Operating system: process isolation, permissions, Unix sockets, flock, SO_PEERCRED | Trusted |
 | Filesystem: fsync, rename atomicity, RENAME_EXCHANGE, user extended attributes | Trusted (A3, A4) |
 | Container runtime, for the reference deployment | Trusted (A1) |
@@ -43,7 +45,7 @@ Every guarantee below rests on stated assumptions, and every assumption has a st
 | | Assumption | Status | Evidence, and what is not covered |
 |---|---|---|---|
 | A1 | The agent's only route to a governed effect is the broker | **Monitored** | CI bypass tests in the reference deployment; verify_world detects a bypass that changes a governed file (CI canary). Not detected: bypasses that only read, or that create files the broker never wrote (proved undetectable by B6's verification in R23, uncovered_creation_undetected) |
-| A2 | The agent cannot read or write the config, registry, intents, audit log, kernel binary, or attestation key | **Declared** | Deployer's file permissions; key created owner-only (0600); CI confirms the confined agent cannot read the key |
+| A2 | The agent cannot read or write the config, registry, intents, audit log, kernel binary, or the broker's private signing key | **Declared** | Deployer's file permissions; the private key is owner-only (0600); CI confirms the confined agent cannot read it. Verification needs only the public key ring, which may be published |
 | A3 | An append or write that returns after fsync is durable | **Declared** | Operating system guarantee; not tested under power loss |
 | A4 | Rename and exchange within one filesystem are atomic | **Declared** | POSIX and Linux guarantees; RENAME_EXCHANGE requires filesystem support |
 | A5 | One broker owns the audit log and intents file | **Enforced** | Exclusive locks at startup; a second broker refuses to start (probe P4) |
@@ -62,8 +64,8 @@ Every guarantee below rests on stated assumptions, and every assumption has a st
 
 - **Untested fallbacks.** Without renameat2, writes fall back to compare-then-rename, with a small window not covered by B6; without user extended attributes, files carry no attestation. Both are reported in responses (`attested: false`; the write mechanism in the basis) but neither path is exercised by the tests.
 - **ABA.** A foreign writer that restores the exact recorded state between the record and the write is indistinguishable from no change. One that restores both content and attestation defeats verification.
-- **Key compromise.** Anyone who can read the attestation key (violating A2) can forge attestations.
-- **Key rotation.** A file attested under any key other than the current one is indistinguishable from a forgery, so reinstalling the broker or rotating its key makes previously governed files report "attestation forged or moved" until they are re-attested. A key ring (old keys kept for verification only) is not implemented.
+- **Key compromise.** Anyone who can read the private signing key (violating A2) can forge attestations under it; public keys cannot forge. v1 (HMAC) attestations remain forgeable by anyone holding the legacy secret until it is retired.
+- **Key rotation.** rotate_keys (with the broker stopped; refused while one holds the lock) keeps old public keys in the ring, so earlier attestations keep verifying, from the public ring alone too. An attestation under a key not in the ring is reported as an unknown key, not a forgery. The rotated private key and the retired legacy secret are removed by file deletion, not secure erasure. Re-attestation of legacy files has a small window between its digest check and the attribute write.
 - **Effect-free truncation.** Dropped log entries are detected only when the governed file they describe survives; an effect-free tail needs an external checkpoint, which is not implemented.
 - **Timing of authority.** Credential expiry is checked at decision time, not when the effect completes; in-flight requests cannot be revoked.
 - **Retries without a key.** A retry that carries no idempotency key performs the write again. It lands in the same state, so it is harmless for writes, but it is a second effect; non-repetition holds only for keyed requests (B7). B6's cas_retry_idempotent is a final-state property and does not establish it.
