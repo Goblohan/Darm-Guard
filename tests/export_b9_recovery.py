@@ -119,7 +119,7 @@ def L_val(v):
     return {None: "none", "old": "some (Val.mine Att.old)", "new": "some (Val.mine Att.new)",
             "foreign": "some Val.foreign"}[v]
 def L_fs(s):
-    return f"(FS.mk {L_val(s[0])} {L_val(s[1])} {L_val(s[2])})"
+    return f"(FS.mk ({L_val(s[0])}) ({L_val(s[1])}) ({L_val(s[2])}))"
 ns = "DARM.RecoveryTraceBad" if CORRUPT else "DARM.RecoveryTrace"
 body = ",\n".join(f"  Obs.{k} {L_fs(b_)} {L_fs(a_)}" for k, b_, a_ in obs)
 kinds = {}
