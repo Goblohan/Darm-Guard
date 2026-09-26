@@ -75,6 +75,7 @@ The config holds the policy, the credential's tools, the workspace directory, an
 | A deletion removes a file only from its recorded state; legitimate deletions verify clean, foreign ones are detected | Proved in B6 Part 1b (casOpt_applies_iff, delete_only_from_recorded) and B8 (legitimate_ops_never_flagged); tests/delete_tool.py, tests/b8_correspondence.py |
 | A rename moves a file without losing or duplicating it, even across a crash, and re-attests it | Proved in B8 Part 2 (rename_preserves) and B9 (our_file_never_lost_or_duplicated, recovery_normal, late_occupation_restores); tests/rename_tool.py, tests/rename_crash.py. The implementation is tested against B9, not certified |
 | Evidence can be checked by anyone holding the public keys, and forged by no one without the private key | Ed25519 attestations (darm_guard/attest.py); tests/attest_ring.py, attest_broker.py, attest_stage4.py. Tested, not modelled |
+| Removing or rewriting audit history below a published checkpoint is detected, even with the hash chain recomputed | Signed checkpoints (darm_guard/checkpoint.py); tests/checkpoint_test.py, checkpoint_broker.py. Tested, not modelled; the sink must be outside the broker host's control |
 | Changes outside the broker, and dropped log entries, are detected | Proved in B6 (tamper_detected, truncation_detected); probes P8 and P9; a CI canary shows a bypass of the broker being caught |
 | Reconciliation reports state, not causation | Proved in B5 (success_is_state_confirmation); probe P3 |
 | The agent cannot vouch for itself | Proved in B1; enforced at the interface; attack-tested |
@@ -225,8 +226,9 @@ The conditions behind each check are proved in [darm-monitor](https://github.com
 - v0.10.2 -- a rename onto itself is refused: it lies outside B9's model, and after a crash recovery could not tell it from an interrupted roll-back. Rename recovery is tested through its own crash window (B9: recovery_crash_window_harmless).
 - v0.10.1 -- rename recovery made all or nothing, as B9 proves: a blocked roll-back changes nothing, and recovery never alters foreign content.
 - v0.10.0 -- rename_file: the claim, inspect, re-attest, place protocol (B9), with startup recovery at every phase; a rename is a source delete and a destination write in the typed log (B8 Part 2).
-- v0.11.0 (this release) -- attestations are Ed25519 signatures verified against a public key ring, so verifying evidence no longer requires the power to forge it; legacy HMAC attestations are read, re-attested without laundering, then retired; key rotation. First declared dependency: cryptography.
-- Next -- an external audit checkpoint; in-flight revocation; per-resource intents and delegation; certifying the Python broker against B4-B6; publishing third-party comparisons with their maintainers.
+- v0.11.0 -- attestations are Ed25519 signatures verified against a public key ring, so verifying evidence no longer requires the power to forge it; legacy HMAC attestations are read, re-attested without laundering, then retired; key rotation. First declared dependency: cryptography.
+- v0.12.0 (this release) -- external audit checkpoints: the broker signs its log's chain head every N records and at startup and shutdown, and publishes it to a sink outside its own control; anyone with the public keys can detect truncation or rewriting below a published head. New options --checkpoint-sink and --checkpoint-every.
+- Next -- in-flight revocation; per-resource intents and delegation; certifying the Python broker against B4-B6; publishing third-party comparisons with their maintainers.
 - Later -- credential-holding enforcement broker for one domain; gated credential expansion.
 
 ## License

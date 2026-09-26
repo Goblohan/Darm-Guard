@@ -25,6 +25,7 @@ Every guarantee below rests on stated assumptions, and every assumption has a st
 | A rename never loses or duplicates the file, including across a crash, and rolls back with the original attestation on conflict | B9; B8 Part 2 (tested against the implementation, not certified) | tests/rename_tool.py, tests/rename_crash.py |
 | A governed file changed outside the broker, or a dropped log entry whose file survives, is detected | B6 | Probes P8, P9; CI canary |
 | Evidence can be verified without the power to forge it: attestations are Ed25519 signatures checked against a public key ring; a legacy v1 file is re-attested only if it still verifies and nothing else is wrong with it | Tested, not modelled | tests/attest_ring.py, attest_broker.py, attest_stage4.py; re-attestation refuses tampered files |
+| Truncating the audit log below a published checkpoint, or rewriting any entry before one (even with the whole hash chain recomputed), is detected with public keys only | Tested, not modelled; depends on A8 | tests/checkpoint_test.py, checkpoint_broker.py |
 | A path cannot be redirected between check and use | By construction (handle walk, no symlinks followed) | Probes P1a, P1b; not modeled formally |
 
 ## Trusted computing base
@@ -51,6 +52,7 @@ Every guarantee below rests on stated assumptions, and every assumption has a st
 | A5 | One broker owns the audit log and intents file | **Enforced** | Exclusive locks at startup; a second broker refuses to start (probe P4) |
 | A6 | The system clock is trustworthy | **Witnessed** | Requests earlier than the latest audit record (5 s tolerance) are refused (probe P5). Not detected: forward jumps, or rollback before the first record |
 | A7 | The caller is identified correctly | **Enforced** (process identity) | pid, uid and gid read from the kernel (probe P6). This identifies an operating-system process, not a cryptographically authenticated principal |
+| A8 | The checkpoint sink is outside the broker host's control | **Declared** | Deployment only: the broker publishes signed chain heads to --checkpoint-sink but cannot keep them out of reach. A sink the broker's host can rewrite protects nothing against an attacker who controls that host |
 
 ## Out of scope by design
 
@@ -66,7 +68,7 @@ Every guarantee below rests on stated assumptions, and every assumption has a st
 - **ABA.** A foreign writer that restores the exact recorded state between the record and the write is indistinguishable from no change. One that restores both content and attestation defeats verification.
 - **Key compromise.** Anyone who can read the private signing key (violating A2) can forge attestations under it; public keys cannot forge. v1 (HMAC) attestations remain forgeable by anyone holding the legacy secret until it is retired.
 - **Key rotation.** rotate_keys (with the broker stopped; refused while one holds the lock) keeps old public keys in the ring, so earlier attestations keep verifying, from the public ring alone too. An attestation under a key not in the ring is reported as an unknown key, not a forgery. The rotated private key and the retired legacy secret are removed by file deletion, not secure erasure. Re-attestation of legacy files has a small window between its digest check and the attribute write.
-- **Effect-free truncation.** Dropped log entries are detected only when the governed file they describe survives; an effect-free tail needs an external checkpoint, which is not implemented.
+- **Audit checkpoints.** The broker publishes a signed checkpoint every N records (--checkpoint-every) and at startup and clean shutdown. Fewer than N of the newest records are unprotected at any time; a SIGKILL or a crash publishes nothing, leaving the records since the last checkpoint unprotected; a failure to publish is recorded in the log, not prevented. Without --checkpoint-sink, an effect-free tail remains detectable only through surviving governed files.
 - **Timing of authority.** Credential expiry is checked at decision time, not when the effect completes; in-flight requests cannot be revoked.
 - **Retries without a key.** A retry that carries no idempotency key performs the write again. It lands in the same state, so it is harmless for writes, but it is a second effect; non-repetition holds only for keyed requests (B7). B6's cas_retry_idempotent is a final-state property and does not establish it.
 - **Unresolved keys.** A key whose attempt reconciliation leaves unresolved stays pending, and every retry with it is refused, so the caller must use a fresh key. This is deliberate (the broker never guesses whether an unknown write happened), but the key is unusable until an operator resolves it. The mapping from reconciliation verdicts to key states is tested, not modelled, and confirmedSuccess is state correspondence, not attribution.
