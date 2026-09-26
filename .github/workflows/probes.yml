@@ -117,3 +117,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/key_failclosed.py
+
+      - name: P14 repeated argument names refused (decided and executed cannot diverge)
+        run: |
+          ./tests/setup_demo.sh
+          python tests/duplicate_args.py
