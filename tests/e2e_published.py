@@ -79,6 +79,13 @@ check("verify_world clean for both paths after the rename",
 check("no private file left behind",
       not [n for n in os.listdir(f"{D}/workspace/reports") if ".darm-tmp-" in n])
 
+send({"tool": "write_file", "args": [["path", "/workspace/reports/e2e_self.md"], ["content", "stay"]]})
+r = send({"tool": "rename_file", "args": [["path", "/workspace/reports/e2e_self.md"],
+                                          ["destination", "/workspace/reports/e2e_self.md"]]})
+check("a rename onto itself is refused and changes nothing",
+      r.get("effect") == "failed" and "same" in (r.get("error") or "")
+      and open(f"{D}/workspace/reports/e2e_self.md").read() == "stay")
+
 try:
     B.serve(cfg, "/tmp/darm-e2e-2.sock", AUDIT).server_close()
     second = True
