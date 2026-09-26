@@ -71,11 +71,13 @@ p = subprocess.Popen([sys.executable, "-c", "from darm_guard.broker import main;
                       "--config", f"{D}/config.json", "--registry", f"{D}/registry.txt",
                       "--socket", sock, "--audit", M, "--checkpoint-sink", S2, "--checkpoint-every", "1000"],
                      env=dict(os.environ, PYTHONPATH=ROOT), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-for _ in range(50):
-    if os.path.exists(sock):
-        break
-    time.sleep(0.1)
-time.sleep(0.5)
+# wait for the start record, not the socket: the socket appears before keys,
+# the kernel client and reconciliation, and the SIGTERM handler is installed only
+# after start is written. Waiting for the socket plus a fixed 0.5 s raced (the gap
+# measured 0.36 s, and exceeded 0.5 s under load during a regression run).
+deadline = time.time() + 20
+while time.time() < deadline and not (os.path.exists(M) and '"start"' in open(M).read()):
+    time.sleep(0.05)
 p.send_signal(signal.SIGTERM)
 p.wait(timeout=10)
 ring = B.KeyRing.load(None, M + ".pub.json")

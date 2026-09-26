@@ -19,7 +19,7 @@ check("kernel installed and its SHA-256 matches the pinned one", digest == I.KER
 
 D, SOCK = "/tmp/darmdemo", "/tmp/darm-e2e.sock"
 AUDIT = f"{D}/e2e.jsonl"
-for f in (AUDIT, AUDIT + ".key", AUDIT + ".lock", f"{D}/workspace/reports/e2e.md"):
+for f in (AUDIT, AUDIT + ".key", AUDIT + ".pub.json", AUDIT + ".legacy.key", AUDIT + ".lock", f"{D}/workspace/reports/e2e.md"):
     if os.path.exists(f):
         os.remove(f)
 cfg = B.BrokerConfig.load(f"{D}/config.json", f"{D}/registry.txt")

@@ -112,3 +112,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/checkpoint_broker.py
+
+      - name: Fail closed without a signing key; rename rolls back if signing fails
+        run: |
+          ./tests/setup_demo.sh
+          python tests/key_failclosed.py

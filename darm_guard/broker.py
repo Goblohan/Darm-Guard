@@ -388,7 +388,14 @@ def _rename_protocol(sfd, sleaf, dfd, dleaf, expected, attest, private, old_att)
         return "conflict: source changed since it was recorded; the change was restored and nothing renamed"
     if attest is not None:                                                     # 3. re-attest
         key, rid, target = attest
-        _set_att(sfd, private, _attestation(key, rid, target, expected[1]))
+        try:
+            _set_att(sfd, private, _attestation(key, rid, target, expected[1]))
+        except Exception as e:
+            # signing or the attribute write failed: the original attestation is
+            # untouched, so return the file to the source and report
+            _renameat2(sfd, private, sleaf, _RENAME_NOREPLACE)
+            return (f"re-attestation failed ({type(e).__name__}): the source was restored "
+                    f"and nothing renamed")
     try:
         _renameat2(sfd, private, dleaf, _RENAME_NOREPLACE, dst_fd=dfd)        # 4. place
     except FileExistsError:
@@ -480,6 +487,11 @@ def _load_or_create_keys(audit_path: str):
     if os.path.exists(priv) and not os.path.exists(pub):
         os.replace(priv, legacy_path)
     legacy = open(legacy_path, "rb").read() if os.path.exists(legacy_path) else None
+    if os.path.exists(pub) and not os.path.exists(priv):
+        # fail closed: without the private key the broker cannot sign, and would
+        # write unattested files
+        raise RuntimeError(f"the public key ring {pub} exists but the private signing key "
+                           f"{priv} is missing: refusing to start without the ability to sign")
     if os.path.exists(pub):
         ring = KeyRing.load(priv, pub)
     else:
@@ -703,6 +715,8 @@ class Broker:
         self._lock = threading.Lock()
         self._keys = {}   # idempotency key -> {rid, hash, state, effect}
         self.key = key
+        if key is not None and not key.ring.can_sign():
+            raise ValueError("a broker needs a key ring that can sign; this one holds public keys only")
 
     def decide(self, obj, now=None):
         """Pure B1 brokerStep: no execution, no audit.
@@ -1220,7 +1234,21 @@ def serve(cfg: BrokerConfig, socket_path: str, audit_path: str,
         os.remove(socket_path)
     srv = _Server(socket_path, _Handler)
     srv._darm_locks = locks
-    key = _load_or_create_keys(audit_path)
+    try:
+        key = _load_or_create_keys(audit_path)
+    except Exception:
+        # release the socket and the locks (server_close closes _darm_locks); never
+        # let cleanup replace the original error, which says why the start failed
+        try:
+            srv.server_close()
+        except OSError:
+            pass
+        for fd in locks:
+            try:
+                os.close(fd)
+            except OSError:
+                pass        # already closed by server_close
+        raise
     os.chmod(socket_path, 0o600)
     srv.broker = Broker(cfg, KernelClient(kernel_path), AuditLog(audit_path),
                         load_intents(intents_path) if intents_path else None, intents_path, key)
