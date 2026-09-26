@@ -195,6 +195,9 @@ class AuditLog:
         self.prev = "0" * 64
         self.last_ts = None
         self._lock = threading.Lock()
+        self.count, self.genesis = 0, None
+        self.checkpointer = None        # optional: publishes signed chain heads
+        self._in_hook = False
         if os.path.exists(path):
             for n, line in enumerate(open(path)):
                 if not line.strip():
@@ -205,6 +208,9 @@ class AuditLog:
                 if e.get("prev_hash") != self.prev or body != h:
                     raise RuntimeError(f"audit chain broken at entry {n}: refusing to start")
                 self.prev = h
+                self.count += 1
+                if self.genesis is None:
+                    self.genesis = h
                 if e.get("ts"):
                     ts = datetime.fromisoformat(e["ts"])
                     self.last_ts = max(self.last_ts, ts) if self.last_ts else ts
@@ -221,6 +227,32 @@ class AuditLog:
                 f.flush()
                 os.fsync(f.fileno())
             self.prev = h
+            self.count += 1
+            if self.genesis is None:
+                self.genesis = h
+            snapshot = (self.genesis, self.count, self.prev)
+        # outside the lock, and only after the record is durable (fsync above)
+        if self.checkpointer is not None and not self._in_hook:
+            self._checkpoint(snapshot, force=False)
+
+    def _checkpoint(self, snapshot, force):
+        err = self.checkpointer.maybe(*snapshot, force=force)
+        if err and not self._in_hook:
+            self._in_hook = True      # the failure record itself does not checkpoint
+            try:
+                self.append({"event": "checkpoint_failed", "error": err, "count": snapshot[1]})
+            finally:
+                self._in_hook = False
+        return err
+
+    def checkpoint_now(self):
+        """Publish a checkpoint for the current head, whatever the interval
+        (startup, shutdown)."""
+        if self.checkpointer is None or self.count == 0:
+            return None
+        with self._lock:
+            snapshot = (self.genesis, self.count, self.prev)
+        return self._checkpoint(snapshot, force=True)
 
 
 def _real_in_workspace(cfg: BrokerConfig, path: str) -> Optional[str]:
@@ -1175,7 +1207,8 @@ def _claim(path: str) -> int:
 
 
 def serve(cfg: BrokerConfig, socket_path: str, audit_path: str,
-          kernel_path: Optional[str] = None, intents_path: Optional[str] = None) -> _Server:
+          kernel_path: Optional[str] = None, intents_path: Optional[str] = None,
+          checkpoint_sink: Optional[str] = None, checkpoint_every: int = 100) -> _Server:
     locks = [_claim(audit_path)]
     if intents_path:
         try:
@@ -1191,7 +1224,12 @@ def serve(cfg: BrokerConfig, socket_path: str, audit_path: str,
     os.chmod(socket_path, 0o600)
     srv.broker = Broker(cfg, KernelClient(kernel_path), AuditLog(audit_path),
                         load_intents(intents_path) if intents_path else None, intents_path, key)
+    if checkpoint_sink:
+        from .checkpoint import Checkpointer
+        srv.broker.audit.checkpointer = Checkpointer(key.ring, checkpoint_sink, checkpoint_every)
     srv.broker.reconcile_pending()
+    if checkpoint_sink:
+        srv.broker.audit.checkpoint_now()      # startup: cover everything already on disk
     return srv
 
 
@@ -1204,16 +1242,32 @@ def main() -> None:
     ap.add_argument("--socket", default="/tmp/darm-broker.sock")
     ap.add_argument("--audit", default="darm-broker-audit.jsonl")
     ap.add_argument("--intents", help="principal-held single-use intents, one tool per line (E24)")
+    ap.add_argument("--checkpoint-sink",
+                    help="directory to publish signed audit checkpoints to; it protects the log "
+                         "only if this host cannot rewrite it")
+    ap.add_argument("--checkpoint-every", type=int, default=100,
+                    help="publish a checkpoint every N audit records; fewer than N of the newest "
+                         "records are unprotected at any time")
     a = ap.parse_args()
     cfg = BrokerConfig.load(a.config, a.registry)
-    srv = serve(cfg, a.socket, a.audit, intents_path=a.intents)
+    srv = serve(cfg, a.socket, a.audit, intents_path=a.intents,
+                checkpoint_sink=a.checkpoint_sink, checkpoint_every=a.checkpoint_every)
     cfg_hash, reg_hash = sha256_file(a.config), sha256_file(a.registry)
     srv.broker.audit.append({"event": "start", "config_sha256": cfg_hash,
                              "registry_sha256": reg_hash})
     print(f"darm-broker listening on {a.socket}")
     print(f"  config sha256   {cfg_hash}")
     print(f"  registry sha256 {reg_hash}")
-    srv.serve_forever()
+    import signal
+
+    def _stop(signum, frame):
+        raise SystemExit(0)      # so the finally below runs on SIGTERM, not only on Ctrl+C
+    signal.signal(signal.SIGTERM, _stop)
+    try:
+        srv.serve_forever()
+    finally:
+        srv.broker.audit.append({"event": "stop"})
+        srv.broker.audit.checkpoint_now()      # shutdown: cover the stop record
 
 
 # ---- Agent-side client ----------------------------------------------------

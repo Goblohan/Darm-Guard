@@ -107,3 +107,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/checkpoint_test.py
+
+      - name: The broker publishes checkpoints (interval, startup, failure, SIGTERM)
+        run: |
+          ./tests/setup_demo.sh
+          python tests/checkpoint_broker.py

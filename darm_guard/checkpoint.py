@@ -62,3 +62,36 @@ def check_log(audit_path: str, checkpoints: list, ring) -> dict:
         else:
             covered = max(covered, n)
     return {"ok": not findings, "findings": findings, "covered": covered, "entries": len(entries)}
+
+
+class Checkpointer:
+    """Publishes a signed checkpoint every `every` audit records, and on demand
+    (startup, shutdown). The newest records since the last published checkpoint,
+    fewer than `every` of them, are not yet protected. A failure to publish is
+    returned to the caller, which records it; it never blocks the broker. After a
+    failure, the next attempt waits another interval."""
+
+    def __init__(self, ring, sink_dir: str, every: int):
+        if every < 1:
+            raise ValueError("checkpoint interval must be at least 1")
+        self.ring, self.sink_dir, self.every = ring, sink_dir, every
+        self.last_count = self.last_attempt = self.failures = self.published = 0
+
+    def path_for(self, genesis: str) -> str:
+        return os.path.join(self.sink_dir, genesis[:16] + ".checkpoints.jsonl")
+
+    def maybe(self, genesis: str, count: int, head: str, force: bool = False):
+        """None if nothing was due or it was published; otherwise the error."""
+        if force:
+            if count == self.last_count:
+                return None
+        elif count - max(self.last_count, self.last_attempt) < self.every:
+            return None
+        self.last_attempt = count
+        try:
+            publish(self.ring.sign_checkpoint(genesis, count, head), self.sink_dir)
+        except OSError as e:
+            self.failures += 1
+            return f"{type(e).__name__}: {e}"
+        self.last_count, self.published = count, self.published + 1
+        return None
