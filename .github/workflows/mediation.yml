@@ -52,7 +52,7 @@ jobs:
           import json
           from darm_guard.broker import BrokerConfig, verify_world
           cfg = BrokerConfig.load("tests/fixtures/mediation_config.json", "tests/fixtures/mediation_registry.txt")
-          key = open("/tmp/darmdemo/audit.jsonl.key", "rb").read()
+          key = __import__("darm_guard.broker").broker._load_or_create_keys("/tmp/darmdemo/audit.jsonl")
           res = verify_world(cfg, "/tmp/darmdemo/audit.jsonl", key)
           print(json.dumps(res, indent=2))
           assert res["ok"], "world and log disagree"
@@ -64,7 +64,7 @@ jobs:
           python - << 'EOF'
           from darm_guard.broker import BrokerConfig, verify_world
           cfg = BrokerConfig.load("tests/fixtures/mediation_config.json", "tests/fixtures/mediation_registry.txt")
-          key = open("/tmp/darmdemo/audit.jsonl.key", "rb").read()
+          key = __import__("darm_guard.broker").broker._load_or_create_keys("/tmp/darmdemo/audit.jsonl")
           res = verify_world(cfg, "/tmp/darmdemo/audit.jsonl", key)
           hits = [f for f in res["findings"] if f["target"].endswith("canary.md")]
           print(hits)

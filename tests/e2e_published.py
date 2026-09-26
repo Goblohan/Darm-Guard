@@ -51,7 +51,7 @@ check("invented path rejected on provenance", r.get("failure") == "provenance")
 r = send({"tool": "read_file", "args": [["path", "/workspace/../secret.txt"]]})
 check("traversal refused", "normal form" in (r.get("error") or ""))
 
-key = open(AUDIT + ".key", "rb").read()
+key = B._load_or_create_keys(AUDIT)
 check("world matches the log", B.verify_world(cfg, AUDIT, key)["ok"])
 with open(f"{D}/workspace/reports/e2e.md", "a") as f:
     f.write(" changed outside the broker")

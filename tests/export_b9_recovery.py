@@ -41,10 +41,10 @@ obs, n = [], [0]
 def scenario(crash_hook, crash_on, interfere, window=False):
     n[0] += 1; tag = f"s{n[0]}"
     audit = f"{D}/rec_{tag}.jsonl"
-    for f in (audit, audit + ".key", audit + ".lock"):
+    for f in (audit, audit + ".key", audit + ".pub.json", audit + ".legacy.key", audit + ".lock"):
         if os.path.exists(f):
             os.remove(f)
-    key = os.urandom(32)
+    key = B.Keys.generate()
     b = B.Broker(cfg, KernelClient(), B.AuditLog(audit), None, None, key)
     src, dst = f"{tag}src.md", f"{tag}dst.md"
     w = b.handle({"tool": "write_file", "args": [["path", "/workspace/reports/" + src], ["content", "ours " + tag]]})
@@ -91,8 +91,7 @@ def scenario(crash_hook, crash_on, interfere, window=False):
             B._set_att = orig if crash_hook == "_set_att" else B.__dict__["_set_att"]
         obs.append(("interrupted", before, state()))
     before = state()
-    kfd = os.open(audit + ".key", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    os.write(kfd, key); os.close(kfd)
+    key.ring.save(audit + ".key", audit + ".pub.json")
     srv = B.serve(cfg, f"/tmp/darm-rec-{tag}.sock", audit)
     srv.server_close()
     obs.append(("full", before, state()))

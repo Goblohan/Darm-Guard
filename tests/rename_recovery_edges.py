@@ -23,10 +23,10 @@ def check(label, got, predicted, note=""):
 
 def fresh(tag):
     audit = f"{D}/edge_{tag}.jsonl"
-    for f in (audit, audit + ".key", audit + ".lock"):
+    for f in (audit, audit + ".key", audit + ".pub.json", audit + ".legacy.key", audit + ".lock"):
         if os.path.exists(f):
             os.remove(f)
-    key = os.urandom(32)
+    key = B.Keys.generate()
     return audit, key, B.Broker(cfg, KernelClient(), B.AuditLog(audit), None, None, key)
 
 def crash_rename(b, src, dst, hook, on_call, before_claim=None):
@@ -49,8 +49,7 @@ def crash_rename(b, src, dst, hook, on_call, before_claim=None):
         setattr(B, hook, orig)
 
 def restart(audit, key, tag):
-    kfd = os.open(audit + ".key", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    os.write(kfd, key); os.close(kfd)
+    key.ring.save(audit + ".key", audit + ".pub.json")
     srv = B.serve(cfg, f"/tmp/darm-edge-{tag}.sock", audit)
     srv.server_close()
 

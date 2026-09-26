@@ -184,7 +184,7 @@ report("P7 idempotent retry applies once",
        f"prepared records: {len(prepared)}")
 
 # P8, P9: the world checked against the log (Phase 3)
-key = os.urandom(32)
+key = B.Keys.generate()
 a8 = f"{D}/p8.jsonl"
 rm(a8)
 b8 = B.Broker(CFG, KernelClient(), B.AuditLog(a8), None, None, key)

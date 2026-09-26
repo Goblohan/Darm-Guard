@@ -19,10 +19,10 @@ def check(label, got, predicted):
 
 def case(label, hook_name, crash_on_call, verdict, where):
     audit = f"{D}/crash_{hook_name}_{crash_on_call}.jsonl"
-    for f in (audit, audit + ".key", audit + ".lock"):
+    for f in (audit, audit + ".key", audit + ".pub.json", audit + ".legacy.key", audit + ".lock"):
         if os.path.exists(f):
             os.remove(f)
-    key = os.urandom(32)
+    key = B.Keys.generate()
     b = B.Broker(cfg, KernelClient(), B.AuditLog(audit), None, None, key)
     src, dst = f"c{crash_on_call}{hook_name[1]}src.md", f"c{crash_on_call}{hook_name[1]}dst.md"
     assert b.handle({"tool": "write_file", "args": [["path", "/workspace/reports/" + src],
@@ -43,8 +43,7 @@ def case(label, hook_name, crash_on_call, verdict, where):
         crashed = True
     finally:
         setattr(B, hook_name, orig)
-    kfd = os.open(audit + ".key", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    os.write(kfd, key); os.close(kfd)
+    key.ring.save(audit + ".key", audit + ".pub.json")
     srv = B.serve(cfg, f"/tmp/darm-{hook_name}{crash_on_call}.sock", audit)
     srv.server_close()
     verdicts = [e.get("reconciliation") for e in map(json.loads, open(audit)) if e.get("event") == "reconciled"]

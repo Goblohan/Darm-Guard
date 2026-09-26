@@ -25,10 +25,10 @@ def att_rid(key, path):
         return None
 
 audit = f"{D}/window.jsonl"
-for f in (audit, audit + ".key", audit + ".lock"):
+for f in (audit, audit + ".key", audit + ".pub.json", audit + ".legacy.key", audit + ".lock"):
     if os.path.exists(f):
         os.remove(f)
-key = os.urandom(32)
+key = B.Keys.generate()
 b = B.Broker(cfg, KernelClient(), B.AuditLog(audit), None, None, key)
 w = b.handle({"tool": "write_file", "args": [["path", "/workspace/reports/wsrc.md"], ["content", "mine"]]})
 
@@ -64,8 +64,7 @@ check("first recovery crashed inside its roll-back", crashed, True)
 check("our file back at the source", open(f"{R}/wsrc.md").read(), "mine")
 check("still carrying the rename's attestation (the window)", att_rid(key, f"{R}/wsrc.md") == rid_rename, True)
 
-kfd = os.open(audit + ".key", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-os.write(kfd, key); os.close(kfd)
+key.ring.save(audit + ".key", audit + ".pub.json")
 srv = B.serve(cfg, "/tmp/darm-window.sock", audit)
 srv.server_close()
 verdicts = [e.get("reconciliation") for e in map(json.loads, open(audit)) if e.get("event") == "reconciled"]

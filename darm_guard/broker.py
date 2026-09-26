@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from .attest import KeyRing
 import json
 import os
 import socket
@@ -398,22 +399,61 @@ def _leaf_state(pfd: int, leaf: str):
 XATTR = "user.darm"
 
 
-def _attestation(key: bytes, rid: str, target: str, digest: str) -> bytes:
-    """What a governed file carries (Phase 3: the world points at the log):
-    the request that wrote it, and a MAC only the broker's key can produce."""
-    mac = hmac.new(key, f"{rid}|{target}|{digest}".encode(), hashlib.sha256).hexdigest()
-    return json.dumps({"rid": rid, "target": target, "digest": digest, "mac": mac},
-                      sort_keys=True).encode()
+class Keys:
+    """The broker's attestation keys: a v2 Ed25519 ring, plus, during the
+    transition, the v1 HMAC secret, which is only ever read (v1 is never written)."""
+    def __init__(self, ring, legacy=None):
+        self.ring, self.legacy = ring, legacy
+
+    @classmethod
+    def generate(cls):
+        return cls(KeyRing.generate())
+
+    def public_only(self):
+        """What an outside verifier holds: public keys only."""
+        return Keys(self.ring.public_only())
 
 
-def _check_attestation(key: bytes, raw: bytes):
-    try:
-        a = json.loads(raw)
-        mac = hmac.new(key, f"{a['rid']}|{a['target']}|{a['digest']}".encode(),
-                       hashlib.sha256).hexdigest()
-        return a if hmac.compare_digest(mac, a.get("mac", "")) else None
-    except (ValueError, KeyError, TypeError):
+def _attestation(keys, rid: str, target: str, digest: str) -> bytes:
+    """What a governed file carries: a v2 attestation, signed with the broker's
+    Ed25519 key, naming the request, target and digest. v1 is never written."""
+    return keys.ring.sign(rid, target, digest)
+
+
+def _check_attestation(keys, raw):
+    """The attestation with its scheme ('v2' or 'legacy'), or None if it does not
+    verify. v1 (HMAC) verifies only while the legacy secret is present."""
+    if keys is None or not raw:
         return None
+    a, why = keys.ring.verify(raw)
+    if a is not None:
+        return dict(a, scheme="v2")
+    if why == "not v2" and keys.legacy:
+        try:
+            v1 = json.loads(raw)
+            mac = hmac.new(keys.legacy, f"{v1['rid']}|{v1['target']}|{v1['digest']}".encode(),
+                           hashlib.sha256).hexdigest()
+            if hmac.compare_digest(mac, v1.get("mac", "")):
+                return dict(v1, scheme="legacy")
+        except (ValueError, KeyError, TypeError):
+            pass
+    return None
+
+
+def _load_or_create_keys(audit_path: str):
+    """<audit>.key: the Ed25519 private seed (owner-only). <audit>.pub.json: the
+    public ring. A .key with no public ring beside it is a legacy v1 HMAC secret:
+    it moves to <audit>.legacy.key (read-only use) and a new ring is created."""
+    priv, pub, legacy_path = audit_path + ".key", audit_path + ".pub.json", audit_path + ".legacy.key"
+    if os.path.exists(priv) and not os.path.exists(pub):
+        os.replace(priv, legacy_path)
+    legacy = open(legacy_path, "rb").read() if os.path.exists(legacy_path) else None
+    if os.path.exists(pub):
+        ring = KeyRing.load(priv, pub)
+    else:
+        ring = KeyRing.generate()
+        ring.save(priv, pub)
+    return Keys(ring, legacy)
 
 
 def _open_parent(cfg: BrokerConfig, path: str):
@@ -599,7 +639,7 @@ def _basis(resp: dict) -> list:
     if resp.get("attested"):
         claim("the written file attests this request, verifiable later against the log",
               ["DARM.EffectIntegrity.writes_honest", "DARM.EffectIntegrity.tamper_detected",
-               "DARM.EffectIntegrity.truncation_detected"], ["A2: the attestation key is secret"])
+               "DARM.EffectIntegrity.truncation_detected"], ["A2: the private signing key is secret; verification needs only public keys"])
     if eff == "already_applied":
         claim("already applied: the original attempt's effect occurred, and this retry performed none",
               ["DARM.Idempotency2.already_applied_sound", "DARM.Idempotency2.at_most_once_with_failures"],
@@ -999,6 +1039,7 @@ def verify_world(cfg: BrokerConfig, audit_path: str, key: bytes) -> dict:
     xattrs carry no attestations; truncation is detectable only for requests
     whose files survive (an effect-free tail needs an external checkpoint)."""
     findings, latest, logged = [], {}, set()
+    legacy = []   # v1 (HMAC) attestations still verifying during the transition
     for line in open(audit_path):
         if not line.strip():
             continue
@@ -1028,9 +1069,15 @@ def verify_world(cfg: BrokerConfig, audit_path: str, key: bytes) -> dict:
                         "the log records a deletion but the file exists"})
                 continue
             a = _check_attestation(key, raw)
+            if a is None and key is not None and key.ring.verify(raw)[1] == "unknown key":
+                findings.append({"target": logical, "finding":
+                    "attestation under an unknown key (not in the ring)"})
+                continue
             if a is None or a.get("target") != logical:
                 findings.append({"target": logical, "finding": "attestation forged or moved"})
                 continue
+            if a.get("scheme") == "legacy":
+                legacy.append(logical)
             if hashlib.sha256(open(real, "rb").read()).hexdigest() != a["digest"]:
                 findings.append({"target": logical, "finding": "content changed outside the broker"})
             if a["rid"] not in logged:
@@ -1045,7 +1092,7 @@ def verify_world(cfg: BrokerConfig, audit_path: str, key: bytes) -> dict:
     for target, (_rid, op) in latest.items():
         if op == "write" and not os.path.exists(os.path.join(root, target[len(LOGICAL_ROOT):])):
             findings.append({"target": target, "finding": "the log records a write but the file is gone"})
-    return {"ok": not findings, "findings": findings}
+    return {"ok": not findings, "findings": findings, "legacy": legacy}
 
 
 def _claim(path: str) -> int:
@@ -1072,13 +1119,7 @@ def serve(cfg: BrokerConfig, socket_path: str, audit_path: str,
         os.remove(socket_path)
     srv = _Server(socket_path, _Handler)
     srv._darm_locks = locks
-    key_path = audit_path + ".key"
-    if not os.path.exists(key_path):
-        kfd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        os.write(kfd, os.urandom(32))
-        os.fsync(kfd)
-        os.close(kfd)
-    key = open(key_path, "rb").read()
+    key = _load_or_create_keys(audit_path)
     os.chmod(socket_path, 0o600)
     srv.broker = Broker(cfg, KernelClient(kernel_path), AuditLog(audit_path),
                         load_intents(intents_path) if intents_path else None, intents_path, key)

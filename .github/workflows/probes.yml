@@ -92,3 +92,8 @@ jobs:
 
       - name: Attestation v2 (Ed25519 key ring), on its own
         run: python tests/attest_ring.py
+
+      - name: Attestation v2 inside the broker (auditor, legacy, unknown key, migration)
+        run: |
+          ./tests/setup_demo.sh
+          python tests/attest_broker.py

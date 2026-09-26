@@ -10,11 +10,11 @@ import darm_guard.broker as B
 from darm_guard.kernel import KernelClient
 
 D = "/tmp/darmdemo"; WS = f"{D}/workspace"; AUDIT = f"{D}/b8corr.jsonl"
-for f in (AUDIT, AUDIT + ".key", AUDIT + ".lock"):
+for f in (AUDIT, AUDIT + ".key", AUDIT + ".pub.json", AUDIT + ".legacy.key", AUDIT + ".lock"):
     if os.path.exists(f):
         os.remove(f)
 cfg = B.BrokerConfig.load(f"{D}/config.json", f"{D}/registry.txt")
-key = os.urandom(32)
+key = B.Keys.generate()
 broker = B.Broker(cfg, KernelClient(), B.AuditLog(AUDIT), None, None, key)
 
 def project():

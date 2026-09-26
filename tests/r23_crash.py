@@ -9,11 +9,11 @@ import darm_guard.broker as B
 from darm_guard.kernel import KernelClient
 
 D = "/tmp/darmdemo"; WS = f"{D}/workspace"; AUDIT = f"{D}/r23crash.jsonl"
-for f in (AUDIT, AUDIT + ".key", AUDIT + ".lock"):
+for f in (AUDIT, AUDIT + ".key", AUDIT + ".pub.json", AUDIT + ".legacy.key", AUDIT + ".lock"):
     if os.path.exists(f):
         os.remove(f)
 cfg = B.BrokerConfig.load(f"{D}/config.json", f"{D}/registry.txt")
-key = os.urandom(32)
+key = B.Keys.generate()
 
 def project(include_reconciled):
     log, prepared = [], {}
@@ -82,8 +82,7 @@ print(f"  corrected projection honest:    {honest(project(True))}   (predicted F
 print(f"  verify_world ok:                {verify_ok()}   (predicted True: it counts the prepared record)")
 
 # 2. Restart with the same key: startup reconciliation closes the request.
-kfd = os.open(AUDIT + ".key", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-os.write(kfd, key); os.close(kfd)
+key.ring.save(AUDIT + ".key", AUDIT + ".pub.json")
 srv = B.serve(cfg, "/tmp/darm-r23crash.sock", AUDIT)
 srv.server_close()
 verdicts = [e.get("reconciliation") for e in map(json.loads, open(AUDIT)) if e.get("event") == "reconciled"]

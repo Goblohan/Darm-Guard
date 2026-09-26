@@ -11,12 +11,12 @@ from darm_guard.kernel import KernelClient
 
 N, OUT, CORRUPT = int(sys.argv[1]), sys.argv[2], "--corrupt" in sys.argv
 D = "/tmp/darmdemo"; WS = f"{D}/workspace"; AUDIT = f"{D}/trace_export.jsonl"
-for f in (AUDIT, AUDIT + ".key", AUDIT + ".lock"):
+for f in (AUDIT, AUDIT + ".key", AUDIT + ".pub.json", AUDIT + ".legacy.key", AUDIT + ".lock"):
     if os.path.exists(f):
         os.remove(f)
 open(AUDIT, "a").close()
 cfg = B.BrokerConfig.load(f"{D}/config.json", f"{D}/registry.txt")
-key = os.urandom(32)
+key = B.Keys.generate()
 broker = B.Broker(cfg, KernelClient(), B.AuditLog(AUDIT), None, None, key)
 NAMES = ["a.md", "b.md", "c.md"]
 T = ["/workspace/reports/" + n for n in NAMES]
