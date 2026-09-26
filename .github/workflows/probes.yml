@@ -89,3 +89,6 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/rename_recovery_window.py
+
+      - name: Attestation v2 (Ed25519 key ring), on its own
+        run: python tests/attest_ring.py
