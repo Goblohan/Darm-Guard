@@ -221,7 +221,8 @@ The conditions behind each check are proved in [darm-monitor](https://github.com
 - v0.8.1 -- corrects an overclaim: retry non-repetition was attributed to B6's final-state theorem; it holds for keyed requests and is now proved in B7.
 - v0.8.2 -- fixes 'already applied' being reported after a failed or unresolved keyed attempt (probes P11, P12); proved sound in B7b.
 - v0.9.0 -- delete_file, the first new tool since the hardening: compare-and-delete, a typed audit log so legitimate deletions verify clean (B8), and deletion covered by the compare-and-swap model (B6 Part 1b).
-- v0.10.1 (this release) -- rename recovery made all or nothing, as B9 proves: a blocked roll-back changes nothing, and recovery never alters foreign content.
+- v0.10.2 (this release) -- a rename onto itself is refused: it lies outside B9's model, and after a crash recovery could not tell it from an interrupted roll-back. Rename recovery is tested through its own crash window (B9: recovery_crash_window_harmless).
+- v0.10.1 -- rename recovery made all or nothing, as B9 proves: a blocked roll-back changes nothing, and recovery never alters foreign content.
 - v0.10.0 -- rename_file: the claim, inspect, re-attest, place protocol (B9), with startup recovery at every phase; a rename is a source delete and a destination write in the typed log (B8 Part 2).
 - Next -- an external audit checkpoint; in-flight revocation; per-resource intents and delegation; certifying the Python broker against B4-B6; publishing third-party comparisons with their maintainers.
 - Later -- credential-holding enforcement broker for one domain; gated credential expansion.
