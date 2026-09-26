@@ -971,6 +971,43 @@ class Broker:
             return "confirmedFailure"
         return "unresolved"
 
+    def reattest_legacy(self) -> dict:
+        """Upgrade v1 (HMAC) attestations to v2, without laundering. Only a file
+        whose v1 attestation verifies AND that verify_world finds nothing else
+        wrong with is re-signed, for the same request, target and digest; the
+        digest is re-checked through the pinned handle just before signing (a
+        small window remains between that check and the attribute write).
+        Anything else is refused and left as it is, still flagged."""
+        res = verify_world(self.cfg, self.audit.path, self.key)
+        flagged = {f["target"] for f in res["findings"]}
+        upgraded, refused = [], []
+        for target in res["legacy"]:
+            if target in flagged:
+                refused.append(target)
+                continue
+            opened = _open_parent(self.cfg, target)
+            if opened is None:
+                refused.append(target)
+                continue
+            pfd, leaf = opened
+            try:
+                fd = os.open(leaf, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=pfd)
+                try:
+                    raw = os.getxattr(fd, XATTR)
+                finally:
+                    os.close(fd)
+                a = _check_attestation(self.key, raw)
+                if not a or a.get("scheme") != "legacy" or _digest_at(pfd, leaf) != a["digest"]:
+                    refused.append(target)
+                    continue
+                _set_att(pfd, leaf, _attestation(self.key, a["rid"], target, a["digest"]))
+            finally:
+                os.close(pfd)
+            self.audit.append({"event": "reattested", "request_id": a["rid"], "target": target,
+                               "from": "v1 (HMAC)", "to": f"v2 ({self.key.ring.active})"})
+            upgraded.append(target)
+        return {"upgraded": upgraded, "refused": refused}
+
     def _persist_intents(self) -> None:
         if self.intents_path:
             tmp = self.intents_path + ".tmp"
@@ -1093,6 +1130,37 @@ def verify_world(cfg: BrokerConfig, audit_path: str, key: bytes) -> dict:
         if op == "write" and not os.path.exists(os.path.join(root, target[len(LOGICAL_ROOT):])):
             findings.append({"target": target, "finding": "the log records a write but the file is gone"})
     return {"ok": not findings, "findings": findings, "legacy": legacy}
+
+
+def retire_legacy_secret(cfg, audit_path: str, keys) -> bool:
+    """Delete <audit>.legacy.key once no file relies on it; refused while
+    verify_world still lists legacy attestations. Removal is file deletion,
+    not secure erasure."""
+    if verify_world(cfg, audit_path, keys)["legacy"]:
+        return False
+    p = audit_path + ".legacy.key"
+    if os.path.exists(p):
+        os.remove(p)
+    keys.legacy = None
+    return True
+
+
+def rotate_keys(audit_path: str):
+    """Rotate the signing key with the broker stopped. Takes the broker's
+    exclusive lock, so it is refused while a broker is running (a running broker
+    holds the old private key in memory). Generates a new signing key, keeps the
+    old public key in the ring, and rewrites the private key file. The old
+    private key is gone from memory and from the key file; it is not securely
+    erased from the disk's free space. Returns (old key id, new key id)."""
+    lock = _claim(audit_path)
+    try:
+        keys = _load_or_create_keys(audit_path)
+        old = keys.ring.active
+        keys.ring.rotate()
+        keys.ring.save(audit_path + ".key", audit_path + ".pub.json")
+        return old, keys.ring.active
+    finally:
+        os.close(lock)
 
 
 def _claim(path: str) -> int:

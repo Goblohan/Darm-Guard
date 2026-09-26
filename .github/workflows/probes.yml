@@ -97,3 +97,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/attest_broker.py
+
+      - name: Attestation stage 4 (re-attestation without laundering, retiring the old secret, rotation)
+        run: |
+          ./tests/setup_demo.sh
+          python tests/attest_stage4.py
