@@ -1,0 +1,25 @@
+Per-resource intents (E24b) in the broker; gate the E24 intent attacks
+
+An intent binds a tool and, optionally, named arguments
+(write_file path=/workspace/reports/a.md; a rename's source and
+destination). Matching is E24b's rule; the check stores the matched
+intent and, under the same lock, the effect path consumes exactly that
+one; the audit record names it. Loading fails closed (a constraint
+without '=', an empty name or value, a repeated name, a path not in
+normal form) and orders intents broadest first, the order E24b's
+broadest_listed_first_is_consumed assumes. Tool-only intents files work
+unchanged.
+
+tests/intents_resource.py, predictions first, 13/13: binding, once
+only, another file refused, tool-only as before, attenuation (an intent
+for a delete the policy forbids is refused by the policy and kept),
+load order, a rename intent binding both paths, malformed intents
+refused.
+
+tests/intent_attacks.py (the original E24 attacks) needs a running
+broker and was in no workflow, so it had never been gated.
+tests/run_intent_attacks.sh starts one the way the test expects
+(6/6) and now runs in CI.
+
+This text was meant as the feature commit's message; the feature went
+in with the v0.13.0 commit instead.
