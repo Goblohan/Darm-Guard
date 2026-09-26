@@ -22,3 +22,4 @@ for i in $(seq 1 10); do
 done
 ./tests/setup_demo.sh > /dev/null
 PYTHONPATH=/tmp/e2e python3 tests/e2e_published.py "$V"
+tests/e2e_deploy.sh "$V"
