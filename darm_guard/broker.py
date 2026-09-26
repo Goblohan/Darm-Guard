@@ -710,7 +710,10 @@ class Broker:
                  key: Optional[bytes] = None):
         self.cfg, self.kernel, self.audit = cfg, kernel, audit
         # E24: principal-held, single-use intents; None means intents are off
-        self.intents = list(intents) if intents is not None else None
+        self.intents = (_order_intents([_parse_intent(i) if isinstance(i, str)
+                                        else (i[0], tuple(tuple(c) for c in i[1])) for i in intents])
+                        if intents is not None else None)
+        self._matched_intent = None   # set by decide, consumed under the same lock
         self.intents_path = intents_path
         self._lock = threading.Lock()
         self._keys = {}   # idempotency key -> {rid, hash, state, effect}
@@ -729,8 +732,13 @@ class Broker:
             if k in PATH_KEYS and not path_in_normal_form(v):
                 return None, tool, {"decision": "reject", "error": "path not in normal form"}
         inv = canonicalize(self.cfg, tool, args)
-        if self.intents is not None and tool not in self.intents:
-            return inv, tool, {"decision": "reject", "failure": "intent", "error": None}
+        self._matched_intent = None
+        if self.intents is not None:
+            # E24b: the first fitting intent (broadest first); decide runs under
+            # self._lock, so it is still there when the effect path consumes it
+            self._matched_intent = next((i for i in self.intents if _intent_fits(i, tool, args)), None)
+            if self._matched_intent is None:
+                return inv, tool, {"decision": "reject", "failure": "intent", "error": None}
         request = {"policy": self.cfg.policy,
                    "credential": {"tools": list(self.cfg.credential_tools),
                                   "expired": self.cfg.expired(now)},
@@ -839,9 +847,10 @@ class Broker:
             if key is not None:
                 self._keys[key] = {"rid": rid, "hash": invocation_hash(inv), "state": "pending"}
             if self.intents is not None:
-                self.intents.remove(tool)
+                used = self._matched_intent
+                self.intents.remove(used)
                 self._persist_intents()
-                resp = dict(resp, intent_consumed=tool)
+                resp = dict(resp, intent_consumed=_intent_line(used))
 
         result = _execute(self.cfg, inv, before,
                           (self.key, rid, real) if self.key and intended is not None else None,
@@ -1058,7 +1067,7 @@ class Broker:
         if self.intents_path:
             tmp = self.intents_path + ".tmp"
             with open(tmp, "w") as f:
-                f.write("".join(i + "\n" for i in self.intents))
+                f.write("".join(_intent_line(i) + "\n" for i in self.intents))
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp, self.intents_path)
@@ -1108,8 +1117,48 @@ class _Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
         self._darm_locks = []
 
 
+def _parse_intent(line: str):
+    """E24b: 'tool' or 'tool k=v k=v ...'. Fails closed on anything malformed:
+    a constraint without '=', an empty name or value, a repeated name, or a
+    path not in normal form (it could never match). Values cannot contain
+    whitespace."""
+    parts = line.split()
+    if not parts:
+        raise ValueError("empty intent")
+    tool, cons = parts[0], []
+    for c in parts[1:]:
+        k, sep, v = c.partition("=")
+        if not sep or not k or not v:
+            raise ValueError(f"malformed intent constraint {c!r} in {line!r}")
+        if k in PATH_KEYS and not path_in_normal_form(v):
+            raise ValueError(f"intent path {v!r} is not in normal form, so it could never match")
+        cons.append((k, v))
+    if len({k for k, _ in cons}) != len(cons):
+        raise ValueError(f"repeated constraint name in intent {line!r}")
+    return (tool, tuple(cons))
+
+
+def _order_intents(intents) -> list:
+    """Broadest first (fewest constraints), stable: the load order E24b's
+    broadest_listed_first_is_consumed assumes."""
+    return sorted(intents, key=lambda i: len(i[1]))
+
+
+def _intent_fits(intent, tool: str, args) -> bool:
+    """E24b's rule: the tool is equal, and for each constraint (k, v), some
+    argument is named k and every argument named k has value v."""
+    t, cons = intent
+    return t == tool and all(any(a == k for a, _ in args) and all(b == v for a, b in args if a == k)
+                             for k, v in cons)
+
+
+def _intent_line(intent) -> str:
+    t, cons = intent
+    return " ".join([t] + [f"{k}={v}" for k, v in cons])
+
+
 def load_intents(path: str) -> list:
-    return [line.strip() for line in open(path) if line.strip()]
+    return _order_intents([_parse_intent(line.strip()) for line in open(path) if line.strip()])
 
 
 def verify_world(cfg: BrokerConfig, audit_path: str, key: bytes) -> dict:

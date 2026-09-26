@@ -122,3 +122,11 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/duplicate_args.py
+
+      - name: E24 intent attacks against a running broker (previously manual)
+        run: tests/run_intent_attacks.sh
+
+      - name: Per-resource intents (E24b correspondence)
+        run: |
+          ./tests/setup_demo.sh
+          python tests/intents_resource.py
