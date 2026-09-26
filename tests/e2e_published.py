@@ -92,6 +92,29 @@ check("an auditor holding only public keys verifies a governed file",
       B._check_attestation(auditor, raw) is not None and not
       [x for x in B.verify_world(cfg, AUDIT, auditor)["findings"] if x["target"].endswith("e2e_mv2.md")])
 
+from darm_guard.kernel import KernelClient as _KC
+def _intent_broker(name, lines):
+    a, ip, rp = f"{D}/{name}.jsonl", f"{D}/{name}.intents", f"{D}/{name}.revocations"
+    for f in (a, a + ".key", a + ".pub.json", a + ".legacy.key", a + ".lock"):
+        if os.path.exists(f):
+            os.remove(f)
+    open(ip, "w").write("".join(l + "\n" for l in lines)); open(rp, "w").write("")
+    b = B.Broker(cfg, _KC(), B.AuditLog(a), B.load_intents(ip), ip, B.Keys.generate())
+    b.revocations_path = rp
+    return b, ip, rp
+def _w(b, name):
+    return b.handle({"tool": "write_file", "args": [["path", "/workspace/reports/" + name], ["content", "x"]]})
+ib, _, _ = _intent_broker("e2e_int", ["write_file path=/workspace/reports/e2e_i1.md"])
+r1, r2 = _w(ib, "e2e_i1.md"), _w(ib, "e2e_i2.md")
+check("a per-resource intent authorizes its file only",
+      r1.get("effect") == "succeeded" and r1.get("intent_consumed") == "write_file path=/workspace/reports/e2e_i1.md"
+      and r2.get("failure") == "intent")
+rb, rip, rrp = _intent_broker("e2e_rev", ["write_file", "write_file"])
+open(rrp, "a").write("write_file *\n")
+r3 = _w(rb, "e2e_r1.md")
+check("a revocation is honored, and nothing is resurrected",
+      r3.get("failure") == "intent" and open(rip).read().split() == [])
+
 try:
     B.serve(cfg, "/tmp/darm-e2e-2.sock", AUDIT).server_close()
     second = True
