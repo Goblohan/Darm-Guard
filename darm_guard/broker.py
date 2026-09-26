@@ -714,6 +714,10 @@ class Broker:
                                         else (i[0], tuple(tuple(c) for c in i[1])) for i in intents])
                         if intents is not None else None)
         self._matched_intent = None   # set by decide, consumed under the same lock
+        self.revocations_path = None  # E24c: append-only, written by the principal, only read here
+        self._intents_frozen = False
+        self._intents_written = (open(intents_path).read()
+                                 if intents_path and os.path.exists(intents_path) else None)
         self.intents_path = intents_path
         self._lock = threading.Lock()
         self._keys = {}   # idempotency key -> {rid, hash, state, effect}
@@ -734,6 +738,9 @@ class Broker:
         inv = canonicalize(self.cfg, tool, args)
         self._matched_intent = None
         if self.intents is not None:
+            refusal = self._refresh_intents()
+            if refusal:
+                return inv, tool, {"decision": "reject", "failure": "intent", "error": refusal}
             # E24b: the first fitting intent (broadest first); decide runs under
             # self._lock, so it is still there when the effect path consumes it
             self._matched_intent = next((i for i in self.intents if _intent_fits(i, tool, args)), None)
@@ -1063,6 +1070,45 @@ class Broker:
             upgraded.append(target)
         return {"upgraded": upgraded, "refused": refused}
 
+    def _refresh_intents(self):
+        """Under self._lock, before every intent decision; returns a refusal or None.
+        (1) While the broker runs, the intents file is the broker's: if it differs
+        from what the broker last wrote, someone else edited it, so freeze: refuse
+        intent-gated actions and never write the file again (an earlier version
+        overwrote such edits, resurrecting revoked intents). (2) Apply every line
+        of the revocations file (E24c): 'tool *' revokes all intents for a tool,
+        an intent line revokes every identical intent. A line that cannot be read
+        revokes everything: the principal meant to take something away."""
+        if self.intents_path and self._intents_written is not None and not self._intents_frozen:
+            try:
+                current = open(self.intents_path).read()
+            except OSError:
+                current = None
+            if current != self._intents_written:
+                self._intents_frozen = True
+        if self._intents_frozen:
+            return ("the intents file changed outside the broker: refusing intent-gated actions; "
+                    "revoke through the revocations file, or restart")
+        path = self.revocations_path
+        if path and os.path.exists(path):
+            before = list(self.intents)
+            try:
+                for line in open(path):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    parts = line.split()
+                    if len(parts) == 2 and parts[1] == "*":
+                        self.intents = [i for i in self.intents if i[0] != parts[0]]
+                    else:
+                        r = _parse_intent(line)
+                        self.intents = [i for i in self.intents if i != r]
+            except (OSError, ValueError):
+                self.intents = []      # fail closed
+            if self.intents != before:
+                self._persist_intents()
+        return None
+
     def _persist_intents(self) -> None:
         if self.intents_path:
             tmp = self.intents_path + ".tmp"
@@ -1072,6 +1118,7 @@ class Broker:
                 os.fsync(f.fileno())
             os.replace(tmp, self.intents_path)
             _fsync_dir(self.intents_path)
+            self._intents_written = open(self.intents_path).read()
 
 
 # ---- Server -------------------------------------------------------------
@@ -1271,7 +1318,8 @@ def _claim(path: str) -> int:
 
 def serve(cfg: BrokerConfig, socket_path: str, audit_path: str,
           kernel_path: Optional[str] = None, intents_path: Optional[str] = None,
-          checkpoint_sink: Optional[str] = None, checkpoint_every: int = 100) -> _Server:
+          checkpoint_sink: Optional[str] = None, checkpoint_every: int = 100,
+          revocations_path: Optional[str] = None) -> _Server:
     locks = [_claim(audit_path)]
     if intents_path:
         try:
@@ -1304,6 +1352,7 @@ def serve(cfg: BrokerConfig, socket_path: str, audit_path: str,
     if checkpoint_sink:
         from .checkpoint import Checkpointer
         srv.broker.audit.checkpointer = Checkpointer(key.ring, checkpoint_sink, checkpoint_every)
+    srv.broker.revocations_path = revocations_path
     srv.broker.reconcile_pending()
     if checkpoint_sink:
         srv.broker.audit.checkpoint_now()      # startup: cover everything already on disk
@@ -1325,10 +1374,14 @@ def main() -> None:
     ap.add_argument("--checkpoint-every", type=int, default=100,
                     help="publish a checkpoint every N audit records; fewer than N of the newest "
                          "records are unprotected at any time")
+    ap.add_argument("--revocations",
+                    help="append-only file of revocations the principal writes and the broker only "
+                         "reads: an intent line revokes identical intents, 'tool *' all for a tool")
     a = ap.parse_args()
     cfg = BrokerConfig.load(a.config, a.registry)
     srv = serve(cfg, a.socket, a.audit, intents_path=a.intents,
-                checkpoint_sink=a.checkpoint_sink, checkpoint_every=a.checkpoint_every)
+                checkpoint_sink=a.checkpoint_sink, checkpoint_every=a.checkpoint_every,
+                revocations_path=a.revocations)
     cfg_hash, reg_hash = sha256_file(a.config), sha256_file(a.registry)
     srv.broker.audit.append({"event": "start", "config_sha256": cfg_hash,
                              "registry_sha256": reg_hash})

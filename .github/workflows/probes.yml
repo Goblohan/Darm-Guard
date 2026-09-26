@@ -130,3 +130,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/intents_resource.py
+
+      - name: In-flight revocation (E24c)
+        run: |
+          ./tests/setup_demo.sh
+          python tests/revocation.py
