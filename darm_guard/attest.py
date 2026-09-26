@@ -19,6 +19,11 @@ def _raw_public(pub) -> bytes:
 def key_id(public_raw: bytes) -> str:
     return hashlib.sha256(public_raw).hexdigest()[:16]
 
+CHECKPOINT_DOMAIN = "darm-checkpoint-v1"
+
+def _checkpoint_message(genesis: str, count: int, head: str) -> bytes:
+    return f"{CHECKPOINT_DOMAIN}|{genesis}|{count}|{head}".encode()
+
 def _message(rid: str, target: str, digest: str) -> bytes:
     return f"{DOMAIN}|{rid}|{target}|{digest}".encode()
 
@@ -74,6 +79,29 @@ class KeyRing:
             return None, "invalid"
         except (ValueError, KeyError, TypeError, AttributeError):
             return None, "invalid"
+
+    def sign_checkpoint(self, genesis: str, count: int, head: str) -> dict:
+        """Sign an audit log's chain head. A separate domain from attestations,
+        so neither kind of signature can be replayed as the other."""
+        if self._private is None:
+            raise PermissionError("a verify-only ring cannot sign")
+        sig = self._private.sign(_checkpoint_message(genesis, count, head))
+        return {"v": 1, "genesis": genesis, "count": count, "head": head,
+                "kid": self.active, "sig": sig.hex()}
+
+    def verify_checkpoint(self, cp: dict):
+        """(True, None) if valid; otherwise (False, 'unknown key' | 'invalid')."""
+        try:
+            pub = self.publics.get(cp["kid"])
+            if pub is None:
+                return False, "unknown key"
+            Ed25519PublicKey.from_public_bytes(pub).verify(
+                bytes.fromhex(cp["sig"]), _checkpoint_message(cp["genesis"], int(cp["count"]), cp["head"]))
+            return True, None
+        except InvalidSignature:
+            return False, "invalid"
+        except (ValueError, KeyError, TypeError, AttributeError):
+            return False, "invalid"
 
     def save(self, private_path: str, public_path: str) -> None:
         """The private seed (owner-only) and the public ring (publishable)."""
