@@ -255,13 +255,6 @@ class AuditLog:
         return self._checkpoint(snapshot, force=True)
 
 
-def _real_in_workspace(cfg: BrokerConfig, path: str) -> Optional[str]:
-    """Second layer: map /workspace/... onto the real directory, resolve
-    symlinks, and refuse anything that lands outside it."""
-    if not path.startswith(LOGICAL_ROOT):
-        return None
-    real = os.path.realpath(os.path.join(cfg.workspace, path[len(LOGICAL_ROOT):]))
-    return real if real == cfg.workspace or real.startswith(cfg.workspace + os.sep) else None
 
 
 _ESCAPE = {"error": "path escapes workspace or crosses a symlink"}
