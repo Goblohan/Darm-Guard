@@ -86,6 +86,12 @@ check("a rename onto itself is refused and changes nothing",
       r.get("effect") == "failed" and "same" in (r.get("error") or "")
       and open(f"{D}/workspace/reports/e2e_self.md").read() == "stay")
 
+auditor = B.Keys(B.KeyRing.load(None, AUDIT + ".pub.json"))
+raw = os.getxattr(f"{D}/workspace/reports/e2e_mv2.md", B.XATTR)
+check("an auditor holding only public keys verifies a governed file",
+      B._check_attestation(auditor, raw) is not None and not
+      [x for x in B.verify_world(cfg, AUDIT, auditor)["findings"] if x["target"].endswith("e2e_mv2.md")])
+
 try:
     B.serve(cfg, "/tmp/darm-e2e-2.sock", AUDIT).server_close()
     second = True
