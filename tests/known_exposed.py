@@ -10,7 +10,7 @@ P16   an admitted write whose effect fails still spends the intent: EXPOSED
       until three-state consumption (E24d no_burn / unknown_holds / success_spends)."""
 import json, os, shutil, socket, subprocess, sys, tempfile, time
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-EXPECT = {"P15b": "EXPOSED", "P16": "EXPOSED"}
+EXPECT = {"P15b": "EXPOSED", "P16": "HOLD"}   # P16 closed by three-state consumption
 
 def run(intent_line, steps):
     d = tempfile.mkdtemp(prefix="known-"); ws = os.path.join(d, "ws")

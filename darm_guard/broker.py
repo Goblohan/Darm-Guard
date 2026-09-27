@@ -515,6 +515,9 @@ def _open_parent(cfg: BrokerConfig, path: str):
     return fd, parts[-1]
 
 
+_MISSING_DIR = "a directory on the path does not exist"
+
+
 def _path_problem(cfg: BrokerConfig, path) -> str:
     """Why _open_parent refused a path, for the record only. Never used for a
     decision: every case below is refused regardless. Computed after the refusal
@@ -532,7 +535,7 @@ def _path_problem(cfg: BrokerConfig, path) -> str:
         try:
             st = os.lstat(cur)
         except FileNotFoundError:
-            return f"a directory on the path does not exist: {comp}"
+            return f"{_MISSING_DIR}: {comp}"
         except OSError as e:
             return f"a directory on the path cannot be examined: {comp} ({type(e).__name__})"
         if stat.S_ISLNK(st.st_mode):
@@ -553,7 +556,12 @@ def _observe(cfg: BrokerConfig, path: str):
     """B5 target observation through the same race-free resolution."""
     opened = _open_parent(cfg, path)
     if opened is None:
-        return ("unavailable", _path_problem(cfg, path))
+        why = _path_problem(cfg, path)
+        if why.startswith(_MISSING_DIR):
+            # nothing can exist under a directory that does not exist: this is an
+            # observation of absence, which B5 (and three-state settlement) can use
+            return ("absent", None)
+        return ("unavailable", why)
     pfd, leaf = opened
     try:
         kind = _leaf_kind(pfd, leaf)
@@ -733,6 +741,12 @@ class Broker:
                                         else (i[0], tuple(tuple(c) for c in i[1])) for i in intents])
                         if intents is not None else None)
         self._matched_intent = None   # set by decide, consumed under the same lock
+        # E24d three-state consumption: request id -> intent reserved at admission,
+        # settled once the outcome is durable (persisted beside the intents file)
+        self._reserved = {}
+        if intents_path and os.path.exists(intents_path + ".reserved"):
+            self._reserved = {r: _parse_intent(l)
+                              for r, l in json.load(open(intents_path + ".reserved")).items()}
         self.revocations_path = None  # E24c: append-only, written by the principal, only read here
         self._intents_frozen = False
         self._intents_written = (open(intents_path).read()
@@ -875,8 +889,9 @@ class Broker:
             if self.intents is not None:
                 used = self._matched_intent
                 self.intents.remove(used)
+                self._reserved[rid] = used     # E24d: reserved, not spent, until the outcome
                 self._persist_intents()
-                resp = dict(resp, intent_consumed=_intent_line(used))
+                resp = dict(resp, intent_reserved=_intent_line(used))
 
         result = _execute(self.cfg, inv, before,
                           (self.key, rid, real) if self.key and intended is not None else None,
@@ -913,6 +928,13 @@ class Broker:
         try:
             self._record(rid, "outcome", inv, tool, resp)
             resp["evidence"] = "recorded"
+            if self.intents is not None and rid in self._reserved:
+                verdict = (resp.get("reconciliation") if intended is not None
+                           else ("confirmedSuccess" if ok else "confirmedFailure"))
+                try:
+                    self._settle_and_record(rid, verdict, resp)
+                except Exception as e:
+                    resp["intent_state"] = f"reserved (settlement not recorded: {type(e).__name__})"
         except Exception:
             resp["evidence"] = "outcome_unrecorded"   # log shows prepared, no outcome
         if key is not None:
@@ -1089,6 +1111,58 @@ class Broker:
             upgraded.append(target)
         return {"upgraded": upgraded, "refused": refused}
 
+    def _settle_and_record(self, rid, verdict, resp=None):
+        """E24d Part 4. Settle the intent reserved for request `rid` by B5's
+        verdict: confirmedSuccess spends it, confirmedFailure (a proven
+        non-effect) returns it, anything else keeps it reserved. The settlement
+        is recorded BEFORE the intent moves, so a crash in between is repaired
+        at startup from the same verdict (settling is idempotent)."""
+        used = self._reserved.get(rid)
+        if used is None:
+            return None
+        state = {"confirmedSuccess": "spent", "confirmedFailure": "returned"}.get(verdict, "reserved")
+        line = _intent_line(used)
+        rec = {"event": "intent_settled", "request_id": rid, "intent": line,
+               "verdict": verdict, "state": state}
+        if state == "spent":
+            rec["intent_consumed"] = line
+        self.audit.append(rec)
+        with self._lock:
+            if state != "reserved" and rid in self._reserved:
+                del self._reserved[rid]
+                if state == "returned":
+                    self.intents = _order_intents(self.intents + [used])
+                self._persist_intents()
+        if resp is not None:
+            resp["intent_state"] = state
+            if state == "spent":
+                resp["intent_consumed"] = line
+            elif state == "returned":
+                resp["intent_returned"] = line
+        return state
+
+    def settle_reserved(self) -> int:
+        """At startup, after reconcile_pending: settle every intent a crash (or an
+        unresolved outcome) left reserved, by the latest verdict recorded for its
+        request. Still unresolved: it stays reserved."""
+        if self.intents is None or not self._reserved or not os.path.exists(self.audit.path):
+            return 0
+        verdicts = {}
+        for line in open(self.audit.path):
+            if not line.strip():
+                continue
+            e = json.loads(line)
+            if e.get("request_id") in self._reserved and e.get("event") in ("outcome", "reconciled"):
+                v = e.get("reconciliation") or e.get("verdict")
+                if not v and e.get("event") == "outcome":
+                    v = {"succeeded": "confirmedSuccess", "failed": "confirmedFailure"}.get(e.get("effect"))
+                verdicts[e["request_id"]] = v or "unresolved"
+        n = 0
+        for rid in list(self._reserved):
+            if self._settle_and_record(rid, verdicts.get(rid, "unresolved")) != "reserved":
+                n += 1
+        return n
+
     def _refresh_intents(self):
         """Under self._lock, before every intent decision; returns a refusal or None.
         (1) While the broker runs, the intents file is the broker's: if it differs
@@ -1138,6 +1212,12 @@ class Broker:
             os.replace(tmp, self.intents_path)
             _fsync_dir(self.intents_path)
             self._intents_written = open(self.intents_path).read()
+            rtmp = self.intents_path + ".reserved.tmp"
+            with open(rtmp, "w") as f:
+                json.dump({r: _intent_line(i) for r, i in self._reserved.items()}, f, sort_keys=True)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(rtmp, self.intents_path + ".reserved")
 
 
 # ---- Server -------------------------------------------------------------
@@ -1373,6 +1453,7 @@ def serve(cfg: BrokerConfig, socket_path: str, audit_path: str,
         srv.broker.audit.checkpointer = Checkpointer(key.ring, checkpoint_sink, checkpoint_every)
     srv.broker.revocations_path = revocations_path
     srv.broker.reconcile_pending()
+    srv.broker.settle_reserved()                # E24d: settle what a crash left reserved
     if checkpoint_sink:
         srv.broker.audit.checkpoint_now()      # startup: cover everything already on disk
     return srv

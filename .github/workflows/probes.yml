@@ -146,3 +146,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/path_diagnosis.py
+
+      - name: Three-state consumption (E24d Part 4); closes P16
+        run: |
+          ./tests/setup_demo.sh
+          python tests/three_state.py

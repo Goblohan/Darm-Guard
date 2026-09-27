@@ -33,8 +33,10 @@ check("a file where a directory should be", write("/workspace/reports/afile/x.md
       ("failed", "a component of the path is not a directory: afile"))
 check("the target is a symlink", write("/workspace/reports/l.md"),
       ("failed", "the target is a symlink"))
-check("observation names the cause too", B._observe(cfg, "/workspace/reports/new/x.md"),
-      ("unavailable", "a directory on the path does not exist: new"))
+check("observing under a missing directory: absent (nothing can exist there)",
+      B._observe(cfg, "/workspace/reports/new/x.md"), ("absent", None))
+check("observing through a symlinked directory: still unavailable, with the cause",
+      B._observe(cfg, "/workspace/reports/link/x.md"), ("unavailable", "the path crosses a symlink: link"))
 check("nothing written through the symlinks",
       (os.path.exists(f"{W}/x.md"), open(f"{W}/notes.txt").read() == "hello from notes\n"), (False, True))
 
