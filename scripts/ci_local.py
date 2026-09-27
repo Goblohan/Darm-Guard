@@ -1,14 +1,28 @@
 #!/usr/bin/env python3
-"""Run the gate (.github/workflows/probes.yml) exactly as CI does: from a clean
-clone of the committed tree, every step in order, stopping at the first
-failure. Usage (from the repository): scripts/ci_local.py
-Uncommitted changes are NOT included; commit first, as CI would see it."""
+"""Run the gate (.github/workflows/probes.yml) as CI does: from a clean clone of
+the committed tree, every step in order, stopping at the first failure.
+Two things CI's disposable runners do implicitly are done here explicitly:
+installs go into a private virtual environment (never into yours), and brokers
+a step leaves running in the background are stopped before and after.
+Usage: scripts/ci_local.py   (commit first: uncommitted changes are not included)"""
 import os, re, shutil, subprocess, sys
 repo = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 ci = "/tmp/darm-ci-local"
+
+def stop_brokers():
+    subprocess.run(["pkill", "-f", "darm_guard.broker import main|darm-broker"])
+
+stop_brokers()
 shutil.rmtree(ci, ignore_errors=True)
 subprocess.run(["git", "clone", "-q", repo, ci], check=True)
 os.chdir(ci)
+venv = os.path.join(ci, ".venv")
+if subprocess.run([sys.executable, "-m", "venv", venv], capture_output=True).returncode != 0:
+    shutil.rmtree(venv, ignore_errors=True)
+    subprocess.run([sys.executable, "-m", "virtualenv", "--quiet", venv], check=True)
+env = dict(os.environ, VIRTUAL_ENV=venv, PATH=os.path.join(venv, "bin") + os.pathsep + os.environ["PATH"])
+env.pop("PYTHONPATH", None)
+
 lines = open(".github/workflows/probes.yml").read().split("\n")
 steps, i = [], 0
 while i < len(lines):
@@ -38,8 +52,10 @@ while i < len(lines):
         steps.append((name, cmd))
     i = j
 for name, cmd in steps:
-    r = subprocess.run(["bash", "-c", cmd.replace("python ", "python3 ")], capture_output=True, text=True)
+    r = subprocess.run(["bash", "-c", cmd.replace("python ", "python3 ")],
+                       capture_output=True, text=True, env=env)
     print(("ok      " if r.returncode == 0 else "FAILED  ") + name)
     if r.returncode:
-        print((r.stdout + r.stderr)[-1500:]); sys.exit(1)
+        print((r.stdout + r.stderr)[-1500:]); stop_brokers(); sys.exit(1)
+stop_brokers()
 print(f"all {len(steps)} steps passed")
