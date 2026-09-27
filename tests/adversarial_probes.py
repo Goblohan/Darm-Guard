@@ -264,9 +264,11 @@ srv.shutdown(); srv.server_close()
 spent = sum(r.get("effect") == "succeeded" for r in out)
 unknown = sum(r.get("effect") == "unknown" for r in out)
 unavail = sum("unavailable" in (r.get("error") or "") for r in out)
+unavail_why = __import__("collections").Counter(
+    (r.get("error") or "")[:80] for r in out if "unavailable" in (r.get("error") or ""))
 report("P10 one intent, 100 clients: one spend, no unknowns, none dropped",
        spent == 1 and unknown == 0 and unavail == 0,
-       f"spent={spent} unknown={unknown} unavailable={unavail} of {len(out)}")
+       f"spent={spent} unknown={unknown} unavailable={unavail} of {len(out)}" + (f"; errors: {dict(unavail_why)}" if unavail_why else ""))
 
 print(f"\nHELD {results.count('HELD')}  EXPOSED {results.count('EXPOSED')}  "
       f"INCONCLUSIVE {results.count('INCONCLUSIVE')}  of {len(results)}")
