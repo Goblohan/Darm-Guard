@@ -139,7 +139,7 @@ jobs:
       - name: E24d completeness, three cases (A reproduces P15; B pinned; C joint with deny-by-default)
         run: python tests/completeness_three_case.py
 
-      - name: Known-EXPOSED findings (P15b by theorem, P16 until three-state consumption); a flip fails the gate
+      - name: Known findings, as recorded (P15b EXPOSED by theorem; P16 HOLD since three-state consumption); a flip fails the gate
         run: python tests/known_exposed.py
 
       - name: A refused path is described by its actual cause
@@ -151,3 +151,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/three_state.py
+
+      - name: Content pinned by digest (content_sha256)
+        run: |
+          ./tests/setup_demo.sh
+          python tests/content_hash.py

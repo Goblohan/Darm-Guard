@@ -1278,6 +1278,8 @@ def _parse_intent(line: str):
             raise ValueError(f"malformed intent constraint {c!r} in {line!r}")
         if k in PATH_KEYS and not path_in_normal_form(v):
             raise ValueError(f"intent path {v!r} is not in normal form, so it could never match")
+        if k.endswith("_sha256") and not (len(v) == 64 and all(c in "0123456789abcdef" for c in v)):
+            raise ValueError(f"intent digest {v!r} is not 64 lowercase hex digits, so it could never match")
         cons.append((k, v))
     if len({k for k, _ in cons}) != len(cons):
         raise ValueError(f"repeated constraint name in intent {line!r}")
@@ -1294,8 +1296,16 @@ def _intent_fits(intent, tool: str, args) -> bool:
     """E24b's rule: the tool is equal, and for each constraint (k, v), some
     argument is named k and every argument named k has value v."""
     t, cons = intent
-    return t == tool and all(any(a == k for a, _ in args) and all(b == v for a, b in args if a == k)
-                             for k, v in cons)
+
+    def holds(k, v):
+        # '<arg>_sha256=<digest>' binds argument <arg> by the SHA-256 of its value,
+        # so content with whitespace can be pinned; completeness then rests on
+        # SHA-256's collision resistance (stated in the threat model)
+        name, seen = k, (lambda b: b)
+        if k.endswith("_sha256"):
+            name, seen = k[:-len("_sha256")], (lambda b: hashlib.sha256(b.encode()).hexdigest())
+        return any(a == name for a, _ in args) and all(seen(b) == v for a, b in args if a == name)
+    return t == tool and all(holds(k, v) for k, v in cons)
 
 
 def _intent_line(intent) -> str:
