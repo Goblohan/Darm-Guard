@@ -135,3 +135,6 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/revocation.py
+
+      - name: E24d completeness, three cases (A reproduces P15; B pinned; C joint with deny-by-default)
+        run: python tests/completeness_three_case.py
