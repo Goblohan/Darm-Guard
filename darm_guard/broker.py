@@ -257,7 +257,6 @@ class AuditLog:
 
 
 
-_ESCAPE = {"error": "path escapes workspace or crosses a symlink"}
 
 _libc = ctypes.CDLL(None, use_errno=True)
 _RENAME_NOREPLACE, _RENAME_EXCHANGE = 1, 2
@@ -516,6 +515,33 @@ def _open_parent(cfg: BrokerConfig, path: str):
     return fd, parts[-1]
 
 
+def _path_problem(cfg: BrokerConfig, path) -> str:
+    """Why _open_parent refused a path, for the record only. Never used for a
+    decision: every case below is refused regardless. Computed after the refusal
+    by walking the path again without following links, so under a concurrent
+    change it may describe the state a moment later. (Earlier versions reported
+    every case as 'path escapes workspace or crosses a symlink'.)"""
+    if not isinstance(path, str) or not path.startswith(LOGICAL_ROOT):
+        return "the path is outside the workspace"
+    parts = path[len(LOGICAL_ROOT):].split("/")
+    if not parts or any(c in ("", ".", "..") for c in parts):
+        return "the path is not in normal form"
+    cur = cfg.workspace
+    for comp in parts[:-1]:
+        cur = os.path.join(cur, comp)
+        try:
+            st = os.lstat(cur)
+        except FileNotFoundError:
+            return f"a directory on the path does not exist: {comp}"
+        except OSError as e:
+            return f"a directory on the path cannot be examined: {comp} ({type(e).__name__})"
+        if stat.S_ISLNK(st.st_mode):
+            return f"the path crosses a symlink: {comp}"
+        if not stat.S_ISDIR(st.st_mode):
+            return f"a component of the path is not a directory: {comp}"
+    return "the path could not be resolved"
+
+
 def _leaf_kind(pfd: int, leaf: str):
     try:
         return stat.S_IFMT(os.stat(leaf, dir_fd=pfd, follow_symlinks=False).st_mode)
@@ -527,7 +553,7 @@ def _observe(cfg: BrokerConfig, path: str):
     """B5 target observation through the same race-free resolution."""
     opened = _open_parent(cfg, path)
     if opened is None:
-        return ("unavailable", "path escapes workspace or crosses a symlink")
+        return ("unavailable", _path_problem(cfg, path))
     pfd, leaf = opened
     try:
         kind = _leaf_kind(pfd, leaf)
@@ -550,11 +576,11 @@ def _execute(cfg: BrokerConfig, inv: dict, expected=None, attest=None,
     args = {a["key"]: a["value"] for a in inv["args"]}
     opened = _open_parent(cfg, args.get("path", ""))
     if opened is None:
-        return dict(_ESCAPE)
+        return {"error": _path_problem(cfg, args.get("path", ""))}
     pfd, leaf = opened
     try:
         if _leaf_kind(pfd, leaf) == stat.S_IFLNK:
-            return dict(_ESCAPE)
+            return {"error": "the target is a symlink"}
         if inv["tool"] == "read_file":
             fd = os.open(leaf, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=pfd)
             with os.fdopen(fd) as f:
@@ -588,11 +614,11 @@ def _execute(cfg: BrokerConfig, inv: dict, expected=None, attest=None,
                 return {"error": "source and destination are the same; nothing renamed"}
             dopened = _open_parent(cfg, args.get("destination", ""))
             if dopened is None:
-                return dict(_ESCAPE)
+                return {"error": "destination: " + _path_problem(cfg, args.get("destination", ""))}
             dfd, dleaf = dopened
             try:
                 if _leaf_kind(dfd, dleaf) == stat.S_IFLNK:
-                    return dict(_ESCAPE)
+                    return {"error": "the destination is a symlink"}
                 err = _rename_protocol(pfd, leaf, dfd, dleaf, expected, attest, private, old_att)
             finally:
                 os.close(dfd)

@@ -141,3 +141,8 @@ jobs:
 
       - name: Known-EXPOSED findings (P15b by theorem, P16 until three-state consumption); a flip fails the gate
         run: python tests/known_exposed.py
+
+      - name: A refused path is described by its actual cause
+        run: |
+          ./tests/setup_demo.sh
+          python tests/path_diagnosis.py
