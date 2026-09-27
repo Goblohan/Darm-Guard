@@ -22,7 +22,7 @@ CASES = [
     ("path traversal", lambda: c.propose("read_file", {"path": "/workspace/../secret.txt"}),
      lambda r: r["decision"] == "reject" and "normal form" in err(r)),
     ("symlink escape", lambda: c.propose("read_file", {"path": "/workspace/link.txt"}),
-     lambda r: r.get("executed") is False and "content" not in r and "escapes" in err(r)),
+     lambda r: r.get("executed") is False and "content" not in r and err(r) == "the target is a symlink"),
     ("self-vouching provenance", lambda: raw({"tool": "read_file",
                                               "args": [["path", "/workspace/other.txt"]],
                                               "prov": "authoritative"}),
