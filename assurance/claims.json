@@ -1,0 +1,355 @@
+{
+ "darm_monitor": {
+  "repo": "https://github.com/Goblohan/darm-monitor.git",
+  "commit": "34a434f"
+ },
+ "claims": [
+  {
+   "id": "cas-writes",
+   "claim": "A write or delete takes effect only if the target is in the state recorded at admission; otherwise nothing changes.",
+   "lean": [
+    {
+     "module": "B6EffectIntegrity",
+     "theorems": [
+      "cas_applies_iff",
+      "cas_conflict_preserves"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/r23_conflict.py",
+    "tests/delete_tool.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:_cas_replace"
+   ],
+   "correspondence": "R23 conflict tests drive the broker through foreign writes between observation and replace and check the outcome against casOpt.",
+   "counterexample": "An independent delete-then-write pair can half-apply (B6c independent_pair_can_lose).",
+   "limitation": "A foreign writer between observation and replace is detected as a conflict, not prevented; hard links are outside the model."
+  },
+  {
+   "id": "retry-once",
+   "claim": "A keyed retry never applies an effect twice, and 'already applied' is reported only when the effect happened.",
+   "lean": [
+    {
+     "module": "B7IdempotencyKeys",
+     "theorems": [
+      "keyed_repeat_no_effect",
+      "at_most_once",
+      "already_applied_sound"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/adversarial_probes.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:invocation_hash"
+   ],
+   "correspondence": "Probes P7, P11 and P12 run keyed retries after success, failure and an unresolved crash.",
+   "counterexample": "0.8.1 reported already_applied after a failed attempt (yanked).",
+   "limitation": "Keys are scoped to one audit log."
+  },
+  {
+   "id": "world-matches-log",
+   "claim": "Legitimate operations never flag, and a governed file tampered with or deleted outside the broker is detected.",
+   "lean": [
+    {
+     "module": "B8TypedEffectLog",
+     "theorems": [
+      "legitimate_ops_never_flagged",
+      "foreign_tamper_detected",
+      "foreign_delete_detected",
+      "foreign_creation_undetected"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/b8_correspondence.py",
+    "tests/delete_typed_log.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:verify_world"
+   ],
+   "correspondence": "B8 traces exported from the running broker are checked in Lean (B8TraceCheck), including a corrupted control.",
+   "counterexample": "An after-state-only checker accepts a corrupted before-state (after_only_checker_blind).",
+   "limitation": "Files created outside the broker are not detected (foreign_creation_undetected)."
+  },
+  {
+   "id": "rename-atomic",
+   "claim": "A rename, including its crash recovery, ends where one atomic move would, or where it started; never in between, never lost or duplicated.",
+   "lean": [
+    {
+     "module": "B9RenameProtocol",
+     "theorems": [
+      "our_file_never_lost_or_duplicated",
+      "recover_all_or_nothing"
+     ]
+    },
+    {
+     "module": "B6cCompoundRename",
+     "theorems": [
+      "casMove_conserves",
+      "run_realizes_casMove",
+      "every_crash_recovers_atomically"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/rename_crash.py",
+    "tests/rename_recovery_window.py",
+    "tests/rename_recovery_edges.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:_rename_protocol"
+   ],
+   "correspondence": "Crash tests stop the broker at every phase; B9 recovery traces are checked in Lean (B9RecoveryCheck).",
+   "counterexample": "Two independent single-slot operations lose content when the destination is occupied (independent_pair_can_lose).",
+   "limitation": "Requires renameat2; the private slot is outside casMove (B9 proves it empty at the end)."
+  },
+  {
+   "id": "intent-required",
+   "claim": "Execution requires a principal-held intent and B3's full admission; the agent's stated reason cannot move the decision.",
+   "lean": [
+    {
+     "module": "E24EpistemicPremiseTransfer",
+     "theorems": [
+      "execution_requires_intent",
+      "claimed_reason_irrelevant"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/run_intent_attacks.sh"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:load_intents"
+   ],
+   "correspondence": "The E24 attack witnesses (hijacked second write, clean arguments without an intent) are replayed against a running broker.",
+   "counterexample": "Without an intent gate, a hijacked agent repeats an authorized write.",
+   "limitation": "A tool-only intent does not fix which resource or content (see resource-intents and completeness)."
+  },
+  {
+   "id": "resource-intents",
+   "claim": "An intent authorizes only proposals whose named arguments all match, and never admits what the policy rejects.",
+   "lean": [
+    {
+     "module": "E24bResourceIntents",
+     "theorems": [
+      "execution_requires_fitting_intent",
+      "intent_never_widens",
+      "execution_consumes_the_matched_intent"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/intents_resource.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:_intent_fits"
+   ],
+   "correspondence": "intents_resource.py mirrors E24b's witnesses on the real broker, including attenuation.",
+   "counterexample": "A path-only intent is redeemed by an attacker's content (P15b).",
+   "limitation": "Intents bind names, not files; values cannot contain whitespace (use content_sha256)."
+  },
+  {
+   "id": "revocation",
+   "claim": "A revocation is in force for every decision after it is on disk, never grants, and revoking a tool blocks every proposal for it.",
+   "lean": [
+    {
+     "module": "E24cRevocation",
+     "theorems": [
+      "revocation_never_grants",
+      "revoked_tool_executes_nothing"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/revocation.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:_refresh_intents"
+   ],
+   "correspondence": "revocation.py measures the committed-effect limit both ways.",
+   "counterexample": "Through 0.13.0, editing the intents file was ignored and could resurrect a revoked intent.",
+   "limitation": "An action already committed completes; its effect is not recalled."
+  },
+  {
+   "id": "three-state",
+   "claim": "An intent is spent only by a confirmed effect: a proven non-effect returns it, an unknown outcome keeps it reserved.",
+   "lean": [
+    {
+     "module": "E24dRedemption",
+     "theorems": [
+      "no_burn",
+      "unknown_holds",
+      "success_spends",
+      "success_not_returned"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/three_state.py",
+    "tests/known_exposed.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:_settle_and_record"
+   ],
+   "correspondence": "Settlement uses B5's verdict on a fresh observation, the fact E24d's model leaves as an obligation.",
+   "counterexample": "P16: a failed effect burned its intent (closed in 0.15.0).",
+   "limitation": "ABA: an outside writer restoring the exact previous content after a failed-but-applied effect returns the intent."
+  },
+  {
+   "id": "completeness",
+   "claim": "A mediated mechanism whose intents are all complete executes only acceptable proposals, whoever proposed them; pinned intents are complete, jointly with deny-by-default.",
+   "lean": [
+    {
+     "module": "CompletenessCalculus",
+     "theorems": [
+      "safety",
+      "pinned_complete",
+      "revocation_preserves_completeness"
+     ]
+    },
+    {
+     "module": "E24dRedemption",
+     "theorems": [
+      "pinned_complete_under_b3",
+      "pinned_incomplete_without_deny_by_default"
+     ]
+    },
+    {
+     "module": "E24eLineage",
+     "theorems": [
+      "pinned_complete_general"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/completeness_three_case.py",
+    "tests/content_hash.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:_intent_fits"
+   ],
+   "correspondence": "Case C of the three-case test is the runtime counterpart of the deletion witness.",
+   "counterexample": "Lift deny-by-default for one key, and the pinned intent admits an unacceptable proposal.",
+   "limitation": "Digest pinning rests on SHA-256's collision resistance."
+  },
+  {
+   "id": "premises",
+   "claim": "While every fitting intent has a false premise, nothing executes and nothing is spent; premises never widen the policy.",
+   "lean": [
+    {
+     "module": "E24dRegistryPremises",
+     "theorems": [
+      "executed_implies_usable",
+      "no_redemption_without_a_usable_intent",
+      "premises_never_widen"
+     ]
+    },
+    {
+     "module": "E24dRedemption",
+     "theorems": [
+      "residual_race_when_premise_true"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/premise.py",
+    "tests/known_exposed.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:_premise_problem"
+   ],
+   "correspondence": "E24d-R models the broker's several-intent rule exactly; premise.py measures the residual race.",
+   "counterexample": "Premise true and content unpinned: the attacker arriving first still wins (P15b).",
+   "limitation": "A premise holds at the decision, not throughout the effect; digest premises are modeled only as presence."
+  },
+  {
+   "id": "lineage-limit",
+   "claim": "Completeness is possible exactly when acceptance is determined by what the boundary observes; when it depends on an unobserved process, no intent is complete.",
+   "lean": [
+    {
+     "module": "E24eLineage",
+     "theorems": [
+      "complete_intent_exists_iff",
+      "no_complete_intent_for_hidden_acceptance",
+      "derived_complete"
+     ]
+    },
+    {
+     "module": "E24dRedemption",
+     "theorems": [
+      "no_exact_rule"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/known_exposed.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:_intent_fits"
+   ],
+   "correspondence": "known_exposed.py records P15b as EXPOSED, the case the theorem says no intent can close.",
+   "counterexample": "An unfaithful summary that looks, at the boundary, exactly like a faithful one.",
+   "limitation": "Making a hidden process observable requires a trusted component whose correctness is an assumption."
+  },
+  {
+   "id": "causal-coverage",
+   "claim": "The broker's evidence covers the world's changes exactly when A1 and A2 hold.",
+   "lean": [
+    {
+     "module": "R23DARMGuardCausalCoverage",
+     "theorems": [
+      "coverage_iff_assumptions",
+      "uncovered_creation_undetected"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/r23_correspondence.py",
+    "tests/r23_crash.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:verify_world"
+   ],
+   "correspondence": "Sampled runtime correspondence, including across a crash.",
+   "counterexample": "A direct write that bypasses the broker (A2 violated).",
+   "limitation": "A1 and A2 are deployment assumptions, not guarantees."
+  },
+  {
+   "id": "signatures",
+   "claim": "Evidence can be verified with public keys only, and forged by no one without the private key.",
+   "lean": [],
+   "modelled": false,
+   "tests": [
+    "tests/attest_ring.py",
+    "tests/attest_broker.py",
+    "tests/attest_stage4.py"
+   ],
+   "implementation": [
+    "darm_guard/attest.py:KeyRing"
+   ],
+   "correspondence": "Cryptographic property, tested, not modelled.",
+   "counterexample": "HMAC attestations (0.10.x) were forgeable by any verifier.",
+   "limitation": "Rests on Ed25519 and the secrecy of the private key; rotated keys are deleted, not securely erased."
+  },
+  {
+   "id": "checkpoints",
+   "claim": "Truncating or rewriting the audit log below a published checkpoint is detected, even with the chain recomputed.",
+   "lean": [],
+   "modelled": false,
+   "tests": [
+    "tests/checkpoint_test.py",
+    "tests/checkpoint_broker.py"
+   ],
+   "implementation": [
+    "darm_guard/checkpoint.py:check_log"
+   ],
+   "correspondence": "Operational and cryptographic, tested, not modelled.",
+   "counterexample": "A recomputed hash chain passes the chain check alone.",
+   "limitation": "A8: the sink must be outside the broker host's control; records after the last checkpoint are unprotected."
+  }
+ ]
+}

@@ -161,3 +161,6 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/premise.py
+
+      - name: Assurance graph (every claim cites existing theorems, gated tests, and a limitation)
+        run: python scripts/check_assurance.py
