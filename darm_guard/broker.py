@@ -1254,7 +1254,7 @@ class _Handler(socketserver.StreamRequestHandler):
 
 class _Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     daemon_threads = True
-    request_queue_size = 64
+    request_queue_size = 1024   # a burst larger than the backlog gets EAGAIN at connect (P10); the kernel caps this at net.core.somaxconn
 
     def server_close(self):
         super().server_close()
