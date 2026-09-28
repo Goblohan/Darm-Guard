@@ -776,9 +776,12 @@ class Broker:
                 return inv, tool, {"decision": "reject", "failure": "intent", "error": refusal}
             # E24b: the first fitting intent (broadest first); decide runs under
             # self._lock, so it is still there when the effect path consumes it
-            self._matched_intent = next((i for i in self.intents if _intent_fits(i, tool, args)), None)
+            fitting = [i for i in self.intents if _intent_fits(i, tool, args)]
+            self._matched_intent = next((i for i in fitting if _premise_problem(self.cfg, i) is None), None)
             if self._matched_intent is None:
-                return inv, tool, {"decision": "reject", "failure": "intent", "error": None}
+                unmet = [_premise_problem(self.cfg, i) for i in fitting]
+                return inv, tool, {"decision": "reject", "failure": "intent",
+                                   "error": ("premise not met: " + unmet[0]) if unmet else None}
         request = {"policy": self.cfg.policy,
                    "credential": {"tools": list(self.cfg.credential_tools),
                                   "expired": self.cfg.expired(now)},
@@ -1280,6 +1283,15 @@ def _parse_intent(line: str):
             raise ValueError(f"intent path {v!r} is not in normal form, so it could never match")
         if k.endswith("_sha256") and not (len(v) == 64 and all(c in "0123456789abcdef" for c in v)):
             raise ValueError(f"intent digest {v!r} is not 64 lowercase hex digits, so it could never match")
+        if k.startswith("if_") and k not in ("if_present", "if_absent", "if_digest"):
+            raise ValueError(f"unknown premise {k!r} in {line!r}")
+        if k in ("if_present", "if_absent") and not path_in_normal_form(v):
+            raise ValueError(f"premise path {v!r} is not in normal form")
+        if k == "if_digest":
+            ppath, at, digest = v.rpartition("@")
+            if not at or not path_in_normal_form(ppath) or not (
+                    len(digest) == 64 and all(c in "0123456789abcdef" for c in digest)):
+                raise ValueError(f"premise {v!r} must be <normal-form path>@<64 lowercase hex digits>")
         cons.append((k, v))
     if len({k for k, _ in cons}) != len(cons):
         raise ValueError(f"repeated constraint name in intent {line!r}")
@@ -1298,6 +1310,8 @@ def _intent_fits(intent, tool: str, args) -> bool:
     t, cons = intent
 
     def holds(k, v):
+        if k.startswith("if_"):
+            return True    # a premise: observed by the broker in the world, never read from the proposal
         # '<arg>_sha256=<digest>' binds argument <arg> by the SHA-256 of its value,
         # so content with whitespace can be pinned; completeness then rests on
         # SHA-256's collision resistance (stated in the threat model)
@@ -1311,6 +1325,25 @@ def _intent_fits(intent, tool: str, args) -> bool:
 def _intent_line(intent) -> str:
     t, cons = intent
     return " ".join([t] + [f"{k}={v}" for k, v in cons])
+
+
+def _premise_problem(cfg: BrokerConfig, intent):
+    """E24d Part 3: an intent's premises (if_present=<path>, if_absent=<path>,
+    if_digest=<path>@<sha256>) are observed by the broker in the world, through
+    the same race-free observation as B5, and never read from the proposal.
+    None if all hold, otherwise the first that does not. Evaluated under the
+    broker's lock at the decision: a premise holds at the boundary, not
+    throughout the effect."""
+    for k, v in intent[1]:
+        if k == "if_present" and _observe(cfg, v)[0] != "present":
+            return f"{v} is not present"
+        if k == "if_absent" and _observe(cfg, v) != ("absent", None):
+            return f"{v} is not absent"
+        if k == "if_digest":
+            ppath, _, digest = v.rpartition("@")
+            if _observe(cfg, ppath) != ("present", digest):
+                return f"{ppath} does not have digest {digest[:12]}..."
+    return None
 
 
 def load_intents(path: str) -> list:

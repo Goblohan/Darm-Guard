@@ -10,7 +10,7 @@ P16   an admitted write whose effect fails still spends the intent: EXPOSED
       until three-state consumption (E24d no_burn / unknown_holds / success_spends)."""
 import json, os, shutil, socket, subprocess, sys, tempfile, time
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-EXPECT = {"P15b": "EXPOSED", "P16": "HOLD"}   # P16 closed by three-state consumption
+EXPECT = {"P15a": "HOLD", "P15b": "EXPOSED", "P16": "HOLD"}   # P15a closed by premise-bound intents; P16 by three-state consumption
 
 def run(intent_line, steps):
     d = tempfile.mkdtemp(prefix="known-"); ws = os.path.join(d, "ws")
@@ -67,8 +67,19 @@ def p16():
         return "HOLD", "the failed effect returned the intent; the retry succeeded"
     return "INCONCLUSIVE", json.dumps([first, second])[:200]
 
+def p15a():
+    q3, flag = "/workspace/reports/q3.md", "/workspace/reports/final.flag"
+    atk, legit = run(f"write_file path={q3} if_present={flag}",
+                     [[["path", q3], ["content", "ATTACKER: wire funds"]], [["path", q3], ["content", "Q3 summary"]]])
+    if atk.get("effect") == "succeeded":
+        return "EXPOSED", "the attacker redeemed a conditional intent whose premise was false"
+    if atk.get("failure") == "intent" and "premise not met" in (atk.get("error") or "") \
+            and legit.get("failure") == "intent":
+        return "HOLD", "premise false: no one redeems the intent, attacker or principal"
+    return "INCONCLUSIVE", json.dumps([atk, legit])[:200]
+
 flips = 0
-for name, probe in (("P15b", p15b), ("P16", p16)):
+for name, probe in (("P15a", p15a), ("P15b", p15b), ("P16", p16)):
     verdict, why = probe()
     ok = verdict == EXPECT[name]
     flips += not ok

@@ -139,7 +139,7 @@ jobs:
       - name: E24d completeness, three cases (A reproduces P15; B pinned; C joint with deny-by-default)
         run: python tests/completeness_three_case.py
 
-      - name: Known findings, as recorded (P15b EXPOSED by theorem; P16 HOLD since three-state consumption); a flip fails the gate
+      - name: Known findings, as recorded (P15a HOLD, premises; P15b EXPOSED by theorem; P16 HOLD, three-state consumption); a flip fails the gate
         run: python tests/known_exposed.py
 
       - name: A refused path is described by its actual cause
@@ -156,3 +156,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/content_hash.py
+
+      - name: Premise-bound intents (E24d Part 3); closes P15a
+        run: |
+          ./tests/setup_demo.sh
+          python tests/premise.py
