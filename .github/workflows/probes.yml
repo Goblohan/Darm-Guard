@@ -169,3 +169,6 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/kernel_dimensions.py
+
+      - name: darm-verify's default scenarios are pinned (earlier comparisons stay reproducible)
+        run: python tests/verify_scenarios_pinned.py

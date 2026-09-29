@@ -66,9 +66,39 @@ def _gen(rng) -> dict:
             "invocation": {"tool": tool, "args": args}}
 
 
-def scenarios(n: int, seed: int) -> List[dict]:
+def _with_payload(req: dict, rng) -> dict:
+    """A paired payload variant of a scenario: for about half, one rule of the
+    invoked tool becomes a payload rule and its argument carries a value within
+    the rule but with untrusted provenance. The kernel checks a payload argument
+    against its rule, not its provenance; a per-call provenance gate refuses the
+    whole call. Built from a separate generator, so the default scenarios are
+    unchanged."""
+    import copy
+    req = copy.deepcopy(req)
+    tool = req["invocation"]["tool"]
+    ruled = [tp for tp in req["policy"]["tools"] if tp["tool"] == tool and tp["rules"]]
+    if not ruled or rng.random() < 0.5:
+        return req
+    r = rng.choice(ruled[0]["rules"])
+    choices = r["allowedValues"] + [x + "f" for x in r["allowedPrefixes"]]
+    if not choices:
+        return req
+    r["payload"] = True
+    args = [a for a in req["invocation"]["args"] if a["key"] != r["key"]]
+    args.append({"key": r["key"], "value": rng.choice(choices), "prov": "untrusted"})
+    req["invocation"]["args"] = args
+    return req
+
+
+def scenarios(n: int, seed: int, payload: bool = False) -> List[dict]:
+    """n scenarios from seed. payload=True returns the same scenarios, paired,
+    with payload variants (see _with_payload); the default is unchanged."""
     rng = random.Random(seed)
-    return [_gen(rng) for _ in range(n)]
+    base = [_gen(rng) for _ in range(n)]
+    if not payload:
+        return base
+    prng = random.Random(seed + 1)
+    return [_with_payload(r, prng) for r in base]
 
 
 # ---- Built-in adapters -------------------------------------------------
