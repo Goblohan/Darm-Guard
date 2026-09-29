@@ -1,7 +1,7 @@
 {
  "darm_monitor": {
   "repo": "https://github.com/Goblohan/darm-monitor.git",
-  "commit": "34a434f"
+  "commit": "c463723"
  },
  "claims": [
   {
@@ -375,6 +375,32 @@
    "correspondence": "A proposal that supplies its own provenance is refused as malformed (broker_attacks); the mutation that makes every value trusted is caught by the gate (scripts/mutation_gate.py).",
    "counterexample": "If both a boundary and an upstream layer take their labels from one shared source, corrupting that source defeats both at once: layering gives no protection against a fault in a shared input.",
    "limitation": "Independence holds only if the deployment never populates the principal's registry from an upstream layer's labels; that is a deployment obligation, stated in the README."
+  },
+  {
+   "id": "composition",
+   "claim": "A defense layered with DARM Guard backs it up only in a dimension it also checks, from an independent input: a fault in a dimension the other layer does not check, or in an input both share, passes the composition.",
+   "lean": [
+    {
+     "module": "CompositionLayers",
+     "theorems": [
+      "composed_admits_only_if_both",
+      "independent_backup",
+      "different_dimension_no_backup",
+      "shared_input_no_backup",
+      "independent_input_backs_up"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/coverage_map.py",
+    "tests/kernel_dimensions.py"
+   ],
+   "implementation": [
+    "darm_guard/coverage.py:coverage"
+   ],
+   "correspondence": "darm-coverage runs any gate through one case per dimension, each self-checked by the kernel; a gate's misses are the dimensions where different_dimension_no_backup applies, and those rest on DARM Guard alone.",
+   "counterexample": "A provenance-only upstream layer misses authority, temporal, observation and semantic faults entirely, and a corruption of labels both layers share defeats both at once.",
+   "limitation": "The theorems model layers as independent dimension checks; a real upstream defense's coverage is measured by darm-coverage, not assumed. The results against a specific third-party defense stay private until its disclosure is made."
   }
  ]
 }
