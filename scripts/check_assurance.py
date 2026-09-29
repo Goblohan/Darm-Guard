@@ -65,6 +65,22 @@ unmodelled = [c["id"] for c in doc["claims"] if not c.get("lean")]
 print(f"assurance completeness: {len(both)}/{n} claims have a theorem and gated runtime evidence")
 print(f"evidence completeness:  {len(both)}/{len(modelled)} formal claims have gated runtime evidence")
 print(f"tested, not modelled:   {len(unmodelled)} ({', '.join(unmodelled) or 'none'})")
+tm_path = os.path.join(repo, "THREAT_MODEL.md")
+if os.path.exists(tm_path):
+    tm = open(tm_path).read()
+    ids = {c["id"] for c in doc["claims"]}
+    named = {x for g in re.findall(r"claim: ([a-z0-9-]+(?:, [a-z0-9-]+)*)", tm) for x in g.split(", ")}
+    sec = tm.split("## What is guaranteed", 1)[1].split("\n## ", 1)[0]
+    grows = [l for l in sec.split("\n") if l.startswith("| ") and not l.startswith("| Guarantee")
+             and not re.fullmatch(r"\|[-| :]*\|?", l.strip())]
+    unbacked = [l.split("|")[1].strip()[:70] for l in grows if "claim:" not in l]
+    unknown, unstated = sorted(named - ids), sorted(ids - named)
+    print(f"guarantees backed:      {len(grows) - len(unbacked)}/{len(grows)} threat-model guarantees name a claim")
+    for u in unbacked: print("  UNBACKED       " + u)
+    for u in unknown: print("  UNKNOWN CLAIM  " + u)
+    for u in unstated: print("  UNSTATED       " + u + " (no threat-model entry names it)")
+    if unbacked or unknown or unstated:
+        failures += 1
 if a.manifest:
     json.dump({"darm_monitor": doc["darm_monitor"], "fully_cited": n - failures == n,
                "metrics": {"claims": n, "theorem_and_evidence": len(both), "formal": len(modelled),

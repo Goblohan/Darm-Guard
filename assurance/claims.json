@@ -488,6 +488,119 @@
    "correspondence": "The broker's intents constrain proposal arguments; an agent's reads happen before the proposal and never appear in it.",
    "counterexample": "A complete content-pinned intent admits a proposal produced from an undeclared input.",
    "limitation": "Inputs could be governed by mediating reads, which would enlarge what the boundary observes; DARM Guard does not do this today."
+  },
+  {
+   "id": "kernel-admission",
+   "claim": "No governed effect without kernel admission: the kernel admits exactly what the certified decision procedure admits, with no false admits.",
+   "lean": [
+    {
+     "module": "K3aKernelCorrespondence",
+     "theorems": [
+      "kernel_admits_iff_e18_admits",
+      "kernel_gate_preserves_e17_safety"
+     ]
+    },
+    {
+     "module": "K3bKernelR22",
+     "theorems": [
+      "k3b_sound",
+      "k3b_no_false_admits"
+     ]
+    },
+    {
+     "module": "K4RoleKernel",
+     "theorems": [
+      "admissible_lift"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/kernel_dimensions.py",
+    "tests/broker_attacks.py"
+   ],
+   "implementation": [
+    "darm_guard/kernel.py:KernelClient"
+   ],
+   "correspondence": "The kernel binary is certified against the model on 1,000 answers; every dimension's refusal is asserted by its exact failure class.",
+   "counterexample": "A gate that checks provenance only misses authority, temporal, observation and semantic refusals (darm-coverage).",
+   "limitation": "The binary's correspondence to the model is by certification on sampled answers, not a refinement proof."
+  },
+  {
+   "id": "evidence-before-effect",
+   "claim": "A durable record precedes every effect, whatever faults occur, and no effect is reported as none.",
+   "lean": [
+    {
+     "module": "B4BrokerLifecycle",
+     "theorems": [
+      "step_preserves",
+      "extend",
+      "log_only"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/evidence_attacks.py",
+    "tests/adversarial_probes.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:_record"
+   ],
+   "correspondence": "Evidence tests and probe P3 stop the broker between record and effect and check what the log says.",
+   "counterexample": "An effect performed before its prepared record is durable could leave no evidence after a crash.",
+   "limitation": "An outcome that cannot be recorded is reported as evidence unavailable, and the effect's status is then settled by reconciliation."
+  },
+  {
+   "id": "reconciliation",
+   "claim": "Reconciliation reports state correspondence, never causation: success only when the observed state is the intended one.",
+   "lean": [
+    {
+     "module": "B5EffectReconciliation",
+     "theorems": [
+      "success_is_state_confirmation"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/r23_crash.py",
+    "tests/three_state.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:_reconcile"
+   ],
+   "correspondence": "Crash tests and three-state settlement use B5's verdict on a fresh observation.",
+   "counterexample": "Treating an unresolved outcome as success would spend an intent for an effect that may not have happened.",
+   "limitation": "ABA: an outside writer restoring the exact previous state is indistinguishable from no effect."
+  },
+  {
+   "id": "burst-availability",
+   "claim": "Under a burst larger than the listen backlog, excess clients are refused at connect, before sending anything.",
+   "lean": [],
+   "modelled": false,
+   "tests": [
+    "tests/adversarial_probes.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:_Server"
+   ],
+   "correspondence": "Probe P10: 100 simultaneous clients, one intent, none dropped; the dropped clients' errors are reported.",
+   "counterexample": "With a backlog of 64, a 100-client burst lost 15 to 21 clients under the local harness.",
+   "limitation": "Availability, not safety; the backlog is capped by the kernel's somaxconn."
+  },
+  {
+   "id": "path-race-free",
+   "claim": "A path cannot be redirected between check and use: resolution is race-free and refuses symlinks.",
+   "lean": [],
+   "modelled": false,
+   "tests": [
+    "tests/adversarial_probes.py",
+    "tests/path_diagnosis.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:_open_parent"
+   ],
+   "correspondence": "Probe P1 races a symlink swap against the broker; path_diagnosis asserts every refusal and its cause.",
+   "counterexample": "A check-then-open on a path string lets a symlink swapped in between redirect the effect.",
+   "limitation": "Hard links are outside the model; the resolution is Linux-specific (openat with O_NOFOLLOW)."
   }
  ]
 }
