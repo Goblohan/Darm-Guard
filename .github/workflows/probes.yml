@@ -175,3 +175,8 @@ jobs:
 
       - name: Coverage map (kernel covers every dimension; allow_all covers none; every case self-checked)
         run: python tests/coverage_map.py
+
+      - name: A file moved outside the broker is caught by the attestation's signed path, not only by the log
+        run: |
+          ./tests/setup_demo.sh
+          python tests/moved_attestation.py

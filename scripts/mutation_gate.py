@@ -52,6 +52,7 @@ MUTATIONS = {
                                    '    return "authoritative"\n    if value in registry:\n        return "authoritative"')],
     "intents ignored": [('fitting = [i for i in self.intents if _intent_fits(i, tool, args)]',
                          'fitting = list(self.intents)')],
+    "path check off": [('if a is None or a.get("target") != logical:', 'if a is None:')],
     "premises ignored": [('next((i for i in fitting if _premise_problem(self.cfg, i) is None), None)',
                           'next((i for i in fitting), None)')],
 }
