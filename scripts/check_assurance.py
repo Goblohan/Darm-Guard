@@ -11,6 +11,7 @@ import argparse, json, os, re, subprocess, sys, tempfile
 repo = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 ap = argparse.ArgumentParser()
 ap.add_argument("--monitor"); ap.add_argument("--claims", default=os.path.join(repo, "assurance", "claims.json"))
+ap.add_argument("--manifest")
 a = ap.parse_args()
 doc = json.load(open(a.claims))
 mon, commit = a.monitor, doc["darm_monitor"]["commit"]
@@ -58,4 +59,19 @@ for c in doc["claims"]:
         print("          " + p)
 n = len(doc["claims"])
 print(f"\n{n - failures}/{n} claims fully cited (darm-monitor at {commit})")
+modelled = [c for c in doc["claims"] if c.get("lean")]
+both = [c for c in modelled if c.get("tests")]
+unmodelled = [c["id"] for c in doc["claims"] if not c.get("lean")]
+print(f"assurance completeness: {len(both)}/{n} claims have a theorem and gated runtime evidence")
+print(f"evidence completeness:  {len(both)}/{len(modelled)} formal claims have gated runtime evidence")
+print(f"tested, not modelled:   {len(unmodelled)} ({', '.join(unmodelled) or 'none'})")
+if a.manifest:
+    json.dump({"darm_monitor": doc["darm_monitor"], "fully_cited": n - failures == n,
+               "metrics": {"claims": n, "theorem_and_evidence": len(both), "formal": len(modelled),
+                           "tested_not_modelled": unmodelled},
+               "claims": [{"id": c["id"], "claim": c["claim"],
+                           "theorems": [m["module"] + "." + t for m in c.get("lean", []) for t in m["theorems"]],
+                           "tests": c.get("tests", []), "limitation": c["limitation"]} for c in doc["claims"]]},
+              open(a.manifest, "w"), indent=1)
+    print(f"manifest written: {a.manifest}")
 sys.exit(1 if failures else 0)
