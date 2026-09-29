@@ -1,7 +1,7 @@
 {
  "darm_monitor": {
   "repo": "https://github.com/Goblohan/darm-monitor.git",
-  "commit": "c463723"
+  "commit": "9d49379"
  },
  "claims": [
   {
@@ -401,6 +401,93 @@
    "correspondence": "darm-coverage runs any gate through one case per dimension, each self-checked by the kernel; a gate's misses are the dimensions where different_dimension_no_backup applies, and those rest on DARM Guard alone.",
    "counterexample": "A provenance-only upstream layer misses authority, temporal, observation and semantic faults entirely, and a corruption of labels both layers share defeats both at once.",
    "limitation": "The theorems model layers as independent dimension checks; a real upstream defense's coverage is measured by darm-coverage, not assumed. The results against a specific third-party defense stay private until its disclosure is made."
+  },
+  {
+   "id": "execution-identity",
+   "claim": "A file consistently attested (rid, d) was put at its path by a broker operation under rid, in the world's actual history, whatever foreign actions were interleaved; for a write, that operation corresponds to the authorized invocation.",
+   "lean": [
+    {
+     "module": "E27ExecutionIdentity",
+     "theorems": [
+      "attested_identifies_write",
+      "logged_write_corresponds",
+      "attestation_alone_does_not_bind_location"
+     ]
+    },
+    {
+     "module": "E27bOperationIdentity",
+     "theorems": [
+      "log_provenance",
+      "attested_file_was_placed_by_broker"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/moved_attestation.py",
+    "tests/b8_correspondence.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:verify_world",
+    "darm_guard/broker.py:_attestation"
+   ],
+   "correspondence": "B8 binds identity through the log; the runtime also signs the target and rejects an attestation whose target is not the file's location. moved_attestation.py isolates the second mechanism, and the mutation that removes it is caught by that test alone.",
+   "counterexample": "In B8, whose attestation carries no path, a file moved outside the broker keeps a valid-looking attestation that only the log catches.",
+   "limitation": "A rename carries identity under the rename's request, not the original write's; cryptographic unforgeability is assumed (the model's analogue: foreign actions never write the log)."
+  },
+  {
+   "id": "invocation-correspondence",
+   "claim": "The authorized payload survives canonicalization and reaches the executed invocation, and the mediated domain excludes external creation: every mediated transition is logged.",
+   "lean": [
+    {
+     "module": "E26InvocationExecutionCorrespondence",
+     "theorems": [
+      "canonicalize_projection",
+      "pinned_execution_reaches_invocation",
+      "correspondence_same_write_semantics"
+     ]
+    },
+    {
+     "module": "E26_6Composition",
+     "theorems": [
+      "apply_log_strictly_grows",
+      "external_creation_not_represented",
+      "represented_domain_incomplete"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/b8_correspondence.py",
+    "tests/r23_correspondence.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:_execute"
+   ],
+   "correspondence": "Model-to-model (B3 invocations to B8 operations); the implementation's correspondence to B8 is checked by B8 and R23 trace correspondence.",
+   "counterexample": "A broker write and a foreign creation of the same content look identical by digest; only the log distinguishes them.",
+   "limitation": "Proved for the pinned write case; the corresponding operation exists by construction."
+  },
+  {
+   "id": "input-coverage-limit",
+   "claim": "Authorization completeness constrains what an action produces, not what it drew on; when the boundary does not observe an agent's inputs, no intent can enforce coverage of them.",
+   "lean": [
+    {
+     "module": "E25AuthorizationContractSeparation",
+     "theorems": [
+      "content_pin_complete",
+      "complete_yet_inputs_uncovered",
+      "input_coverage_not_enforceable"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/completeness_three_case.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:_intent_fits"
+   ],
+   "correspondence": "The broker's intents constrain proposal arguments; an agent's reads happen before the proposal and never appear in it.",
+   "counterexample": "A complete content-pinned intent admits a proposal produced from an undeclared input.",
+   "limitation": "Inputs could be governed by mediating reads, which would enlarge what the boundary observes; DARM Guard does not do this today."
   }
  ]
 }
