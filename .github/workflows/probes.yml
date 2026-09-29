@@ -180,3 +180,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/moved_attestation.py
+
+      - name: A file replayed after the broker deleted it is caught by the log, not by the attestation
+        run: |
+          ./tests/setup_demo.sh
+          python tests/replayed_file.py

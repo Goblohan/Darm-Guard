@@ -53,6 +53,8 @@ MUTATIONS = {
     "intents ignored": [('fitting = [i for i in self.intents if _intent_fits(i, tool, args)]',
                          'fitting = list(self.intents)')],
     "path check off": [('if a is None or a.get("target") != logical:', 'if a is None:')],
+    "log freshness off": [('elif logical in latest and latest[logical][1] == "delete":', 'elif False:'),
+                          ('elif logical in latest and latest[logical][0] != a["rid"]:', 'elif False:')],
     "premises ignored": [('next((i for i in fitting if _premise_problem(self.cfg, i) is None), None)',
                           'next((i for i in fitting), None)')],
 }
