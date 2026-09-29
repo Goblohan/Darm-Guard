@@ -51,11 +51,15 @@ while i < len(lines):
     if cmd:
         steps.append((name, cmd))
     i = j
+LOG = "/tmp/darm-ci-local.log"
+log = open(LOG, "w")
 for name, cmd in steps:
     r = subprocess.run(["bash", "-c", cmd.replace("python ", "python3 ")],
                        capture_output=True, text=True, env=env)
     print(("ok      " if r.returncode == 0 else "FAILED  ") + name)
+    log.write(f"=== {name} (exit {r.returncode}) ===\n{r.stdout}{r.stderr}\n"); log.flush()
     if r.returncode:
-        print((r.stdout + r.stderr)[-1500:]); stop_brokers(); sys.exit(1)
+        print((r.stdout + r.stderr)[-1500:]); print(f"full output of every step: {LOG}")
+        stop_brokers(); sys.exit(1)
 stop_brokers()
 print(f"all {len(steps)} steps passed")
