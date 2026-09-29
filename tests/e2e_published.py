@@ -130,5 +130,12 @@ for line in open(AUDIT):
     prev = h
 check("audit hash chain intact", ok)
 
+from darm_guard.coverage import coverage, kernel_adapter
+rows = coverage(kernel_adapter)
+check("the coverage map: every case self-checked, every dimension covered, the untrusted payload admitted",
+      all(r["kernel"] == "ok" for r in rows)
+      and [r["gate"] for r in rows if r["expected"] != "admit"] == ["covers"] * 6
+      and rows[-1]["gate"] == "argument-aware (admits)", f"{len(rows)} cases")
+
 print(f"\n{sum(results)}/{len(results)} passed")
 sys.exit(0 if all(results) else 1)
