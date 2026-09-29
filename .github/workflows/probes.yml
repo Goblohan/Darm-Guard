@@ -164,3 +164,8 @@ jobs:
 
       - name: Assurance graph (every claim cites existing theorems, gated tests, and a limitation)
         run: python scripts/check_assurance.py
+
+      - name: One refusal per dimension, each asserting its exact failure class
+        run: |
+          ./tests/setup_demo.sh
+          python tests/kernel_dimensions.py

@@ -64,7 +64,7 @@ check("the pinned intent spent by the principal", (rp.get("intent_consumed"), le
 print("C. an extra, unruled argument")
 (rc,), disk, left = run_case(pinned, [principal + [["destination", "/workspace/reports/other.md"]]])
 check("refused, and not by the intent (the kernel's deny-by-default)",
-      (rc.get("decision"), rc.get("failure") not in (None, "intent")), ("reject", True))
+      (rc.get("decision"), rc.get("failure")), ("reject", "semantic"))   # exactly deny-by-default, not another check
 print(f"     kernel failure reported: {rc.get('failure')!r}, error: {rc.get('error')!r}")
 check("nothing written; the intent kept", (disk, left), (None, [pinned]))
 
