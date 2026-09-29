@@ -1,7 +1,7 @@
 {
  "darm_monitor": {
   "repo": "https://github.com/Goblohan/darm-monitor.git",
-  "commit": "9d49379"
+  "commit": "6dd7370"
  },
  "claims": [
   {
@@ -420,17 +420,27 @@
       "log_provenance",
       "attested_file_was_placed_by_broker"
      ]
+    },
+    {
+     "module": "B8pPathBoundAttestation",
+     "theorems": [
+      "evolve_inv",
+      "attested_at_location_was_placed",
+      "moved_file_names_its_origin",
+      "replay_accepted_by_attestation_caught_by_log"
+     ]
     }
    ],
    "tests": [
     "tests/moved_attestation.py",
-    "tests/b8_correspondence.py"
+    "tests/b8_correspondence.py",
+    "tests/replayed_file.py"
    ],
    "implementation": [
     "darm_guard/broker.py:verify_world",
     "darm_guard/broker.py:_attestation"
    ],
-   "correspondence": "B8 binds identity through the log; the runtime also signs the target and rejects an attestation whose target is not the file's location. moved_attestation.py isolates the second mechanism, and the mutation that removes it is caught by that test alone.",
+   "correspondence": "Two independent mechanisms, each modeled and each tested. The attestation's signed path (B8p; runtime evidence moved_attestation) binds origin and location; the log (E27, E27b; runtime evidence replayed_file and B8's typed-log test) binds freshness. A move is caught only by the path, a replay only by the log; removing either check is caught by the mutation gate.",
    "counterexample": "In B8, whose attestation carries no path, a file moved outside the broker keeps a valid-looking attestation that only the log catches.",
    "limitation": "A rename carries identity under the rename's request, not the original write's; cryptographic unforgeability is assumed (the model's analogue: foreign actions never write the log)."
   },
