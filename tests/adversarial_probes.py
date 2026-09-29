@@ -158,7 +158,8 @@ try:
 finally:
     B.datetime = real_dt
 report("P5 clock rollback cannot resurrect an expired credential",
-       r_rolled.get("decision") != "admit",
+       r_true.get("decision") == "reject" and r_true.get("failure") == "temporal"   # expired is refused as expired
+       and r_rolled.get("decision") != "admit",                                     # and rolling back does not revive it
        f"true clock: {r_true.get('decision')}/{r_true.get('failure')}; "
        f"rolled back 3h: {r_rolled.get('decision')}")
 
