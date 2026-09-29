@@ -130,6 +130,17 @@ for line in open(AUDIT):
     prev = h
 check("audit hash chain intact", ok)
 
+pb, _, _ = _intent_broker("e2e_prem", ["write_file path=/workspace/reports/e2e_p.md if_present=/workspace/reports/e2e_flag"])
+flag = os.path.join(cfg.workspace, "reports", "e2e_flag")
+if os.path.exists(flag):
+    os.remove(flag)
+p1 = _w(pb, "e2e_p.md")
+open(flag, "w").write("final")
+p2 = _w(pb, "e2e_p.md")
+check("a premise-bound intent: refused while its premise is false, redeemed once it holds",
+      p1.get("failure") == "intent" and "premise not met" in (p1.get("error") or "")
+      and p2.get("effect") == "succeeded", repr(p1.get("error")))
+
 from darm_guard.coverage import coverage, kernel_adapter
 rows = coverage(kernel_adapter)
 check("the coverage map: every case self-checked, every dimension covered, the untrusted payload admitted",
