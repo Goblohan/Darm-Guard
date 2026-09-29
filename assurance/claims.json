@@ -350,6 +350,31 @@
    "correspondence": "Operational and cryptographic, tested, not modelled.",
    "counterexample": "A recomputed hash chain passes the chain check alone.",
    "limitation": "A8: the sink must be outside the broker host's control; records after the last checkpoint are unprotected."
+  },
+  {
+   "id": "provenance-independent",
+   "claim": "Provenance is assigned by the broker from the principal's registry, never read from the proposal or from an upstream layer; what executes is the broker's canonical reading of the proposal.",
+   "lean": [
+    {
+     "module": "B2aDerivedProvenance",
+     "theorems": [
+      "executed_is_canonical",
+      "derived_requires_pattern",
+      "unregistered_unmatched_never_executed"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/broker_attacks.py",
+    "tests/kernel_dimensions.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:assign_prov",
+    "darm_guard/broker.py:parse_proposal"
+   ],
+   "correspondence": "A proposal that supplies its own provenance is refused as malformed (broker_attacks); the mutation that makes every value trusted is caught by the gate (scripts/mutation_gate.py).",
+   "counterexample": "If both a boundary and an upstream layer take their labels from one shared source, corrupting that source defeats both at once: layering gives no protection against a fault in a shared input.",
+   "limitation": "Independence holds only if the deployment never populates the principal's registry from an upstream layer's labels; that is a deployment obligation, stated in the README."
   }
  ]
 }

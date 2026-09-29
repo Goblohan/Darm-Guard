@@ -243,3 +243,10 @@ MIT
 ---
 
 **Olusanya Gbolahan V** -- **PerceptraAI Lab**
+
+## Composing DARM Guard with other defenses
+
+DARM Guard is meant to sit beneath other agent defenses (prompt-injection filters, label trackers, planners), not to replace them. Two rules follow from how layered defenses fail:
+
+- **A layer backs up another only in a dimension it also checks, from an independent input.** A defense that tracks where data came from cannot catch a broker fault in credentials, expiry or policy: in those cases every provenance check passes. Those dimensions rest on DARM Guard alone, which is why each of them is guarded by a test that fails when the check is removed (`scripts/mutation_gate.py`).
+- **Never populate DARM Guard's registry from another layer's labels.** Provenance is the one dimension where a second layer genuinely helps, and only while the two compute it independently. If the broker trusted what an upstream layer labeled, one corrupted label would get past both at once.
