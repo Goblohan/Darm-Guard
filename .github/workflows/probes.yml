@@ -172,3 +172,6 @@ jobs:
 
       - name: darm-verify's default scenarios are pinned (earlier comparisons stay reproducible)
         run: python tests/verify_scenarios_pinned.py
+
+      - name: Coverage map (kernel covers every dimension; allow_all covers none; every case self-checked)
+        run: python tests/coverage_map.py

@@ -24,3 +24,4 @@ include = ["darm_guard*"]
 darm-guard-install-kernel = "darm_guard.install:main"
 darm-verify = "darm_guard.verify:main"
 darm-broker = "darm_guard.broker:main"
+darm-coverage = "darm_guard.coverage:main"
