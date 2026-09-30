@@ -55,6 +55,8 @@ MUTATIONS = {
     "path check off": [('if a is None or a.get("target") != logical:', 'if a is None:')],
     "log freshness off": [('elif logical in latest and latest[logical][1] == "delete":', 'elif False:'),
                           ('elif logical in latest and latest[logical][0] != a["rid"]:', 'elif False:')],
+    "request identifier from the path": [('rid = uuid.uuid4().hex',
+        'rid = hashlib.sha256(repr([a for a in obj.get("args", []) if isinstance(a, list) and a[:1] == ["path"]]).encode()).hexdigest()[:32] if isinstance(obj, dict) else uuid.uuid4().hex')],
     "premises ignored": [('next((i for i in fitting if _premise_problem(self.cfg, i) is None), None)',
                           'next((i for i in fitting), None)')],
 }
