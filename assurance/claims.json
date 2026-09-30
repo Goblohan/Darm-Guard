@@ -1,7 +1,7 @@
 {
  "darm_monitor": {
   "repo": "https://github.com/Goblohan/darm-monitor.git",
-  "commit": "6dd7370"
+  "commit": "ea64760"
  },
  "claims": [
   {
@@ -611,6 +611,32 @@
    "correspondence": "Probe P1 races a symlink swap against the broker; path_diagnosis asserts every refusal and its cause.",
    "counterexample": "A check-then-open on a path string lets a symlink swapped in between redirect the effect.",
    "limitation": "Hard links are outside the model; the resolution is Linux-specific (openat with O_NOFOLLOW)."
+  },
+  {
+   "id": "authorized-effect-chain",
+   "claim": "An authorized write, followed from the proposal to the attested state of the world, holds exactly the authorized content, placed by a write in the history that corresponds to the authorized invocation.",
+   "lean": [
+    {
+     "module": "E28AuthorizedEffectIdentity",
+     "theorems": [
+      "invocation_writes_exactly_of_proposal",
+      "content_forced",
+      "authorized_effect_to_attested_state"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/request_link.py",
+    "tests/moved_attestation.py",
+    "tests/replayed_file.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:_attestation",
+    "darm_guard/broker.py:verify_world"
+   ],
+   "correspondence": "E28 composes the chain in the model; its one broker hypothesis (each request identifier belongs to one invocation) is checked at runtime by request_link, which also follows each attested file back to the invocation that intended exactly its content.",
+   "counterexample": "Without the request link, an attestation could name a request performed for a different invocation, and the file's content need not be the authorized one.",
+   "limitation": "Pinned writes only (deletes and renames are not authorized effects in E26's correspondence); the implementation's correspondence to the models is tested, not proved; the physical disk is B8's model plus E2's transfer assumption."
   }
  ]
 }

@@ -34,6 +34,7 @@ Every guarantee below rests on stated assumptions, and every assumption has a st
 | Under a burst of simultaneous clients larger than the listen backlog, the excess are refused at connect, before sending anything: nothing is decided, reserved or written | Tested (P10: 100 simultaneous clients, none dropped); claim: burst-availability | An availability limit, not a safety one. The backlog is 1024, capped by the kernel's net.core.somaxconn. Before 0.15.0 it was 64, and P10's 100-client burst lost clients whenever the accept loop fell behind |
 | A path cannot be redirected between check and use | By construction (handle walk, no symlinks followed); claim: path-race-free | Probes P1a, P1b; not modeled formally |
 | A file consistently attested for a request was put at its path by the broker operation under that request, in the world's actual history | E27, E27b; claim: execution-identity | tests/moved_attestation.py; removing the attestation's path check is caught by the mutation gate |
+| An authorized write, followed from the proposal to the attested state, holds exactly the authorized content, placed by the broker's execution of that invocation | E28; claim: authorized-effect-chain | tests/request_link.py: each request identifier belongs to one invocation, and attested state leads back to it |
 
 ## Trusted computing base
 
