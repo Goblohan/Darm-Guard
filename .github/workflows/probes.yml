@@ -185,3 +185,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/replayed_file.py
+
+      - name: Each request identifier belongs to one invocation, and attested state leads back to it (E28's request link)
+        run: |
+          ./tests/setup_demo.sh
+          python tests/request_link.py
