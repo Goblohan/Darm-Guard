@@ -141,6 +141,18 @@ check("a premise-bound intent: refused while its premise is false, redeemed once
       p1.get("failure") == "intent" and "premise not met" in (p1.get("error") or "")
       and p2.get("effect") == "succeeded", repr(p1.get("error")))
 
+la = f"{D}/e2e_launder.jsonl"
+for f in (la, la + ".key", la + ".pub.json", la + ".lock"):
+    if os.path.exists(f):
+        os.remove(f)
+lb = B.Broker(cfg, _KC(), B.AuditLog(la), None, None, B.Keys.generate())
+open(os.path.join(cfg.workspace, "reports", "e2e_foreign.md"), "w").write("never written by the broker")
+lr = lb.handle({"tool": "rename_file", "args": [["path", "/workspace/reports/e2e_foreign.md"],
+                                                ["destination", "/workspace/reports/e2e_laundered.md"]]})
+check("a rename refuses a file the broker did not write (no laundering)",
+      lr.get("failure") == "attestation"
+      and not os.path.exists(os.path.join(cfg.workspace, "reports", "e2e_laundered.md")), lr.get("failure"))
+
 from darm_guard.coverage import coverage, kernel_adapter
 rows = coverage(kernel_adapter)
 check("the coverage map: every case self-checked, every dimension covered, the untrusted payload admitted",
