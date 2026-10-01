@@ -190,3 +190,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/request_link.py
+
+      - name: A rename only moves content the broker wrote (no laundering of foreign content)
+        run: |
+          ./tests/setup_demo.sh
+          python tests/rename_laundering.py

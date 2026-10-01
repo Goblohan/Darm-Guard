@@ -882,6 +882,23 @@ class Broker:
                 resp = dict(resp, before_state=before, intended_state=intended, target=real,
                             source=src, destination_before=_observe(self.cfg, real),
                             private=private, source_attestation=_read_attestation(self.cfg, src))
+            if tool == "rename_file" and self.key is not None:
+                # darm-monitor E29: rename only a source that carries a valid
+                # attestation for its own path and current content; otherwise
+                # the rename would attest content the broker never wrote
+                a = _check_attestation(self.key, resp.get("source_attestation"))
+                before = resp.get("before_state") or [None, None]
+                if not a or a.get("target") != src or a.get("digest") != before[1]:
+                    refused = {"decision": "reject", "request_id": rid, "effect": "none",
+                               "failure": "attestation",
+                               "error": "the source carries no valid attestation for its path and "
+                                        "current content; renaming it would attest content the broker "
+                                        "did not write"}
+                    try:
+                        self._record(rid, "decision", inv, tool, refused)   # like every other refusal
+                    except Exception:
+                        pass                                                  # refusing never depends on the log
+                    return refused
             try:
                 self._record(rid, "prepared", inv, tool, resp)
             except Exception as e:
