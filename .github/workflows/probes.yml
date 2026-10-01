@@ -195,3 +195,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/rename_laundering.py
+
+      - name: A renamed file's attestation leads back, through the rename, to the write that authorized its content (E30)
+        run: |
+          ./tests/setup_demo.sh
+          python tests/rename_lineage.py

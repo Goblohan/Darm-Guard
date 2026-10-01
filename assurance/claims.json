@@ -1,7 +1,7 @@
 {
  "darm_monitor": {
   "repo": "https://github.com/Goblohan/darm-monitor.git",
-  "commit": "20c3244"
+  "commit": "83002a0"
  },
  "claims": [
   {
@@ -667,6 +667,32 @@
    "correspondence": "The broker enforces E29's attestation-faithfulness before any record or effect: the source's attestation must verify, name the source's path, and name its current content.",
    "counterexample": "Before this check, a file created outside the broker and renamed through it came out attested, with verification clean: content-faithful renames launder (rename_launders_foreign_content).",
    "limitation": "Files placed outside the broker cannot be renamed through it; they must be written through it, under an authorized request. Rests on the secrecy of the signing key."
+  },
+  {
+   "id": "rename-attribution",
+   "claim": "A file placed by a rename is attributed through two requests: the rename that moved it, from its path to its destination, and the write that authorized its content, linked by the attestation the rename moved.",
+   "lean": [
+    {
+     "module": "E30RenameAttribution",
+     "theorems": [
+      "lineage_origin",
+      "evolve_lin",
+      "rename_placed_lineage",
+      "rename_placed_content_authorized"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/rename_lineage.py",
+    "tests/rename_laundering.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:_read_attestation",
+    "darm_guard/broker.py:_check_attestation"
+   ],
+   "correspondence": "The rename's prepared record carries the source attestation it moved; rename_lineage follows a renamed file's attestation back through it to the write that intended exactly its content.",
+   "counterexample": "Without attestation-faithful renames, a rename could move foreign content, and the lineage would end at no write (rename_laundering).",
+   "limitation": "The capstone assumes the content was written once, under the authorized request; deletes are not attributed (an absence carries no attestation)."
   }
  ]
 }
