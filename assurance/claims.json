@@ -1,7 +1,7 @@
 {
  "darm_monitor": {
   "repo": "https://github.com/Goblohan/darm-monitor.git",
-  "commit": "ea64760"
+  "commit": "20c3244"
  },
  "claims": [
   {
@@ -637,6 +637,36 @@
    "correspondence": "E28 composes the chain in the model; its one broker hypothesis (each request identifier belongs to one invocation) is checked at runtime by request_link, which also follows each attested file back to the invocation that intended exactly its content.",
    "counterexample": "Without the request link, an attestation could name a request performed for a different invocation, and the file's content need not be the authorized one.",
    "limitation": "Pinned writes only (deletes and renames are not authorized effects in E26's correspondence); the implementation's correspondence to the models is tested, not proved; the physical disk is B8's model plus E2's transfer assumption."
+  },
+  {
+   "id": "rename-no-laundering",
+   "claim": "A rename never attests content the broker did not write: it moves only a source carrying a valid attestation for its own path and current content, and in such histories every attested content was produced by a write.",
+   "lean": [
+    {
+     "module": "E29FaithfulRename",
+     "theorems": [
+      "evolve_origin",
+      "attested_content_has_write_origin",
+      "rename_launders_foreign_content"
+     ]
+    },
+    {
+     "module": "E28aUnderAttack",
+     "theorems": [
+      "rename_mints_content"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/rename_laundering.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:_check_attestation",
+    "darm_guard/broker.py:_read_attestation"
+   ],
+   "correspondence": "The broker enforces E29's attestation-faithfulness before any record or effect: the source's attestation must verify, name the source's path, and name its current content.",
+   "counterexample": "Before this check, a file created outside the broker and renamed through it came out attested, with verification clean: content-faithful renames launder (rename_launders_foreign_content).",
+   "limitation": "Files placed outside the broker cannot be renamed through it; they must be written through it, under an authorized request. Rests on the secrecy of the signing key."
   }
  ]
 }

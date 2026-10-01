@@ -35,6 +35,7 @@ Every guarantee below rests on stated assumptions, and every assumption has a st
 | A path cannot be redirected between check and use | By construction (handle walk, no symlinks followed); claim: path-race-free | Probes P1a, P1b; not modeled formally |
 | A file consistently attested for a request was put at its path by the broker operation under that request, in the world's actual history | E27, E27b; claim: execution-identity | tests/moved_attestation.py; removing the attestation's path check is caught by the mutation gate |
 | An authorized write, followed from the proposal to the attested state, holds exactly the authorized content, placed by the broker's execution of that invocation | E28; claim: authorized-effect-chain | tests/request_link.py: each request identifier belongs to one invocation, and attested state leads back to it |
+| A rename never attests content the broker did not write: the source must carry a valid attestation for its own path and current content | E29; claim: rename-no-laundering | tests/rename_laundering.py; found from the model: before this check, a foreign file renamed through the broker came out attested, with verification clean |
 
 ## Trusted computing base
 
