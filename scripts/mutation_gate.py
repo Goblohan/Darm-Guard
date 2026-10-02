@@ -59,6 +59,7 @@ MUTATIONS = {
         'rid = hashlib.sha256(repr([a for a in obj.get("args", []) if isinstance(a, list) and a[:1] == ["path"]]).encode()).hexdigest()[:32] if isinstance(obj, dict) else uuid.uuid4().hex')],
     "rename attestation check off": [('if tool == "rename_file" and self.key is not None:', 'if False:')],
     "read freshness off": [('if latest is not _NO_LOG and latest != (a.get("rid"), "write"):', 'if False:')],
+    "destination unchecked before the decision": [('PATH_KEYS = ("path", "destination")', 'PATH_KEYS = ("path",)')],
     "premises ignored": [('next((i for i in fitting if _premise_problem(self.cfg, i) is None), None)',
                           'next((i for i in fitting), None)')],
 }
