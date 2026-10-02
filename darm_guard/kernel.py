@@ -120,6 +120,8 @@ class KernelClient:
             except Exception as e:
                 self.close()
                 return KernelDecision(False, error=f"kernel unavailable: {e}")
+        if not isinstance(data, dict):   # darm-monitor K5 pyAdmits: only an object can admit
+            return KernelDecision(False, error="kernel reply is not a JSON object", raw=line.strip())
         if data.get("decision") == "admit":
             return KernelDecision(True, raw=line.strip())
         return KernelDecision(False, failure=data.get("failure"),

@@ -210,3 +210,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/read_freshness.py
+
+      - name: The broker decodes the kernel's replies exactly as K5's pyAdmits (the real kernel included)
+        run: |
+          ./tests/setup_demo.sh
+          python tests/kernel_wire_contract.py
