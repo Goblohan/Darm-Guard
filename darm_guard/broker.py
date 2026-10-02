@@ -1632,6 +1632,17 @@ def main() -> None:
                     help="append-only file of revocations the principal writes and the broker only "
                          "reads: an intent line revokes identical intents, 'tool *' all for a tool")
     a = ap.parse_args()
+    import signal
+    # The handler is installed before the broker is reachable. Until the try below
+    # is entered it only records the signal, so no SIGTERM after start is lost:
+    # every log with a start record ends with stop and a final checkpoint.
+    state = {"armed": False, "pending": False}
+
+    def _stop(signum, frame):
+        if state["armed"]:
+            raise SystemExit(0)  # so the finally below runs on SIGTERM, not only on Ctrl+C
+        state["pending"] = True
+    signal.signal(signal.SIGTERM, _stop)
     cfg = BrokerConfig.load(a.config, a.registry)
     srv = serve(cfg, a.socket, a.audit, intents_path=a.intents,
                 checkpoint_sink=a.checkpoint_sink, checkpoint_every=a.checkpoint_every,
@@ -1639,15 +1650,13 @@ def main() -> None:
     cfg_hash, reg_hash = sha256_file(a.config), sha256_file(a.registry)
     srv.broker.audit.append({"event": "start", "config_sha256": cfg_hash,
                              "registry_sha256": reg_hash})
-    print(f"darm-broker listening on {a.socket}")
-    print(f"  config sha256   {cfg_hash}")
-    print(f"  registry sha256 {reg_hash}")
-    import signal
-
-    def _stop(signum, frame):
-        raise SystemExit(0)      # so the finally below runs on SIGTERM, not only on Ctrl+C
-    signal.signal(signal.SIGTERM, _stop)
     try:
+        state["armed"] = True
+        if state["pending"]:
+            raise SystemExit(0)
+        print(f"darm-broker listening on {a.socket}")
+        print(f"  config sha256   {cfg_hash}")
+        print(f"  registry sha256 {reg_hash}")
         srv.serve_forever()
     finally:
         srv.broker.audit.append({"event": "stop"})

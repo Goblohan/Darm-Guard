@@ -223,3 +223,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/destination_normal_form.py
+
+      - name: A broker stopped by SIGTERM at any moment after start ends with stop and a final checkpoint
+        run: |
+          ./tests/setup_demo.sh
+          python tests/sigterm_window.py
