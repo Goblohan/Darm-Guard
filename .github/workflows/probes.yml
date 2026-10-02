@@ -215,3 +215,6 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/kernel_wire_contract.py
+
+      - name: Every claim states its bridge from model to implementation (construction, proved, tested, assumed), counted
+        run: python scripts/check_bridges.py

@@ -1,7 +1,7 @@
 {
  "darm_monitor": {
   "repo": "https://github.com/Goblohan/darm-monitor.git",
-  "commit": "1454a94"
+  "commit": "ad69af5"
  },
  "claims": [
   {
@@ -25,7 +25,8 @@
    ],
    "correspondence": "R23 conflict tests drive the broker through foreign writes between observation and replace and check the outcome against casOpt.",
    "counterexample": "An independent delete-then-write pair can half-apply (B6c independent_pair_can_lose).",
-   "limitation": "A foreign writer between observation and replace is detected as a conflict, not prevented; hard links are outside the model."
+   "limitation": "A foreign writer between observation and replace is detected as a conflict, not prevented; hard links are outside the model.",
+   "bridge": "tested"
   },
   {
    "id": "retry-once",
@@ -48,7 +49,8 @@
    ],
    "correspondence": "Probes P7, P11 and P12 run keyed retries after success, failure and an unresolved crash.",
    "counterexample": "0.8.1 reported already_applied after a failed attempt (yanked).",
-   "limitation": "Keys are scoped to one audit log."
+   "limitation": "Keys are scoped to one audit log.",
+   "bridge": "tested"
   },
   {
    "id": "world-matches-log",
@@ -73,7 +75,8 @@
    ],
    "correspondence": "B8 traces exported from the running broker are checked in Lean (B8TraceCheck), including a corrupted control.",
    "counterexample": "An after-state-only checker accepts a corrupted before-state (after_only_checker_blind).",
-   "limitation": "Files created outside the broker are not detected (foreign_creation_undetected)."
+   "limitation": "Files created outside the broker are not detected (foreign_creation_undetected).",
+   "bridge": "tested"
   },
   {
    "id": "rename-atomic",
@@ -105,7 +108,8 @@
    ],
    "correspondence": "Crash tests stop the broker at every phase; B9 recovery traces are checked in Lean (B9RecoveryCheck).",
    "counterexample": "Two independent single-slot operations lose content when the destination is occupied (independent_pair_can_lose).",
-   "limitation": "Requires renameat2; the private slot is outside casMove (B9 proves it empty at the end)."
+   "limitation": "Requires renameat2; the private slot is outside casMove (B9 proves it empty at the end).",
+   "bridge": "tested"
   },
   {
    "id": "intent-required",
@@ -127,7 +131,8 @@
    ],
    "correspondence": "The E24 attack witnesses (hijacked second write, clean arguments without an intent) are replayed against a running broker.",
    "counterexample": "Without an intent gate, a hijacked agent repeats an authorized write.",
-   "limitation": "A tool-only intent does not fix which resource or content (see resource-intents and completeness)."
+   "limitation": "A tool-only intent does not fix which resource or content (see resource-intents and completeness).",
+   "bridge": "tested"
   },
   {
    "id": "resource-intents",
@@ -150,7 +155,8 @@
    ],
    "correspondence": "intents_resource.py mirrors E24b's witnesses on the real broker, including attenuation.",
    "counterexample": "A path-only intent is redeemed by an attacker's content (P15b).",
-   "limitation": "Intents bind names, not files; values cannot contain whitespace (use content_sha256)."
+   "limitation": "Intents bind names, not files; values cannot contain whitespace (use content_sha256).",
+   "bridge": "tested"
   },
   {
    "id": "revocation",
@@ -172,7 +178,8 @@
    ],
    "correspondence": "revocation.py measures the committed-effect limit both ways.",
    "counterexample": "Through 0.13.0, editing the intents file was ignored and could resurrect a revoked intent.",
-   "limitation": "An action already committed completes; its effect is not recalled."
+   "limitation": "An action already committed completes; its effect is not recalled.",
+   "bridge": "tested"
   },
   {
    "id": "three-state",
@@ -197,7 +204,8 @@
    ],
    "correspondence": "Settlement uses B5's verdict on a fresh observation, the fact E24d's model leaves as an obligation.",
    "counterexample": "P16: a failed effect burned its intent (closed in 0.15.0).",
-   "limitation": "ABA: an outside writer restoring the exact previous content after a failed-but-applied effect returns the intent."
+   "limitation": "ABA: an outside writer restoring the exact previous content after a failed-but-applied effect returns the intent.",
+   "bridge": "tested"
   },
   {
    "id": "completeness",
@@ -234,7 +242,8 @@
    ],
    "correspondence": "Case C of the three-case test is the runtime counterpart of the deletion witness.",
    "counterexample": "Lift deny-by-default for one key, and the pinned intent admits an unacceptable proposal.",
-   "limitation": "Digest pinning rests on SHA-256's collision resistance."
+   "limitation": "Digest pinning rests on SHA-256's collision resistance.",
+   "bridge": "tested"
   },
   {
    "id": "premises",
@@ -264,7 +273,8 @@
    ],
    "correspondence": "E24d-R models the broker's several-intent rule exactly; premise.py measures the residual race.",
    "counterexample": "Premise true and content unpinned: the attacker arriving first still wins (P15b).",
-   "limitation": "A premise holds at the decision, not throughout the effect; digest premises are modeled only as presence."
+   "limitation": "A premise holds at the decision, not throughout the effect; digest premises are modeled only as presence.",
+   "bridge": "tested"
   },
   {
    "id": "lineage-limit",
@@ -293,7 +303,8 @@
    ],
    "correspondence": "known_exposed.py records P15b as EXPOSED, the case the theorem says no intent can close.",
    "counterexample": "An unfaithful summary that looks, at the boundary, exactly like a faithful one.",
-   "limitation": "Making a hidden process observable requires a trusted component whose correctness is an assumption."
+   "limitation": "Making a hidden process observable requires a trusted component whose correctness is an assumption.",
+   "bridge": "tested"
   },
   {
    "id": "causal-coverage",
@@ -316,7 +327,8 @@
    ],
    "correspondence": "Sampled runtime correspondence, including across a crash.",
    "counterexample": "A direct write that bypasses the broker (A2 violated).",
-   "limitation": "A1 and A2 are deployment assumptions, not guarantees."
+   "limitation": "A1 and A2 are deployment assumptions, not guarantees.",
+   "bridge": "tested"
   },
   {
    "id": "signatures",
@@ -333,7 +345,8 @@
    ],
    "correspondence": "Cryptographic property, tested, not modelled.",
    "counterexample": "HMAC attestations (0.10.x) were forgeable by any verifier.",
-   "limitation": "Rests on Ed25519 and the secrecy of the private key; rotated keys are deleted, not securely erased."
+   "limitation": "Rests on Ed25519 and the secrecy of the private key; rotated keys are deleted, not securely erased.",
+   "bridge": "tested"
   },
   {
    "id": "checkpoints",
@@ -349,7 +362,8 @@
    ],
    "correspondence": "Operational and cryptographic, tested, not modelled.",
    "counterexample": "A recomputed hash chain passes the chain check alone.",
-   "limitation": "A8: the sink must be outside the broker host's control; records after the last checkpoint are unprotected."
+   "limitation": "A8: the sink must be outside the broker host's control; records after the last checkpoint are unprotected.",
+   "bridge": "tested"
   },
   {
    "id": "provenance-independent",
@@ -374,7 +388,8 @@
    ],
    "correspondence": "A proposal that supplies its own provenance is refused as malformed (broker_attacks); the mutation that makes every value trusted is caught by the gate (scripts/mutation_gate.py).",
    "counterexample": "If both a boundary and an upstream layer take their labels from one shared source, corrupting that source defeats both at once: layering gives no protection against a fault in a shared input.",
-   "limitation": "Independence holds only if the deployment never populates the principal's registry from an upstream layer's labels; that is a deployment obligation, stated in the README."
+   "limitation": "Independence holds only if the deployment never populates the principal's registry from an upstream layer's labels; that is a deployment obligation, stated in the README.",
+   "bridge": "tested"
   },
   {
    "id": "composition",
@@ -400,7 +415,8 @@
    ],
    "correspondence": "darm-coverage runs any gate through one case per dimension, each self-checked by the kernel; a gate's misses are the dimensions where different_dimension_no_backup applies, and those rest on DARM Guard alone.",
    "counterexample": "A provenance-only upstream layer misses authority, temporal, observation and semantic faults entirely, and a corruption of labels both layers share defeats both at once.",
-   "limitation": "The theorems model layers as independent dimension checks; a real upstream defense's coverage is measured by darm-coverage, not assumed. The results against a specific third-party defense stay private until its disclosure is made."
+   "limitation": "The theorems model layers as independent dimension checks; a real upstream defense's coverage is measured by darm-coverage, not assumed. The results against a specific third-party defense stay private until its disclosure is made.",
+   "bridge": "tested"
   },
   {
    "id": "execution-identity",
@@ -442,7 +458,8 @@
    ],
    "correspondence": "Two independent mechanisms, each modeled and each tested. The attestation's signed path (B8p; runtime evidence moved_attestation) binds origin and location; the log (E27, E27b; runtime evidence replayed_file and B8's typed-log test) binds freshness. A move is caught only by the path, a replay only by the log; removing either check is caught by the mutation gate.",
    "counterexample": "In B8, whose attestation carries no path, a file moved outside the broker keeps a valid-looking attestation that only the log catches.",
-   "limitation": "A rename carries identity under the rename's request, not the original write's; cryptographic unforgeability is assumed (the model's analogue: foreign actions never write the log)."
+   "limitation": "A rename carries identity under the rename's request, not the original write's; cryptographic unforgeability is assumed (the model's analogue: foreign actions never write the log).",
+   "bridge": "tested"
   },
   {
    "id": "invocation-correspondence",
@@ -474,7 +491,8 @@
    ],
    "correspondence": "Model-to-model (B3 invocations to B8 operations); the implementation's correspondence to B8 is checked by B8 and R23 trace correspondence.",
    "counterexample": "A broker write and a foreign creation of the same content look identical by digest; only the log distinguishes them.",
-   "limitation": "Proved for the pinned write case; the corresponding operation exists by construction."
+   "limitation": "Proved for the pinned write case; the corresponding operation exists by construction.",
+   "bridge": "tested"
   },
   {
    "id": "input-coverage-limit",
@@ -497,7 +515,8 @@
    ],
    "correspondence": "The broker's intents constrain proposal arguments; an agent's reads happen before the proposal and never appear in it.",
    "counterexample": "A complete content-pinned intent admits a proposal produced from an undeclared input.",
-   "limitation": "Inputs could be governed by mediating reads, which would enlarge what the boundary observes; DARM Guard does not do this today."
+   "limitation": "Inputs could be governed by mediating reads, which would enlarge what the boundary observes; DARM Guard does not do this today.",
+   "bridge": "tested"
   },
   {
    "id": "kernel-admission",
@@ -533,7 +552,14 @@
    ],
    "correspondence": "The kernel binary is certified against the model on 1,000 answers; every dimension's refusal is asserted by its exact failure class.",
    "counterexample": "A gate that checks provenance only misses authority, temporal, observation and semantic refusals (darm-coverage).",
-   "limitation": "The binary's correspondence to the model is by certification on sampled answers, not a refinement proof."
+   "limitation": "The binary's correspondence to the model is by certification on sampled answers, not a refinement proof.",
+   "bridge": "construction",
+   "trusted_base": [
+    "the Lean compiler and runtime",
+    "Lean's Json.parse and the derived FromJson instances",
+    "the kernel server's I/O loop"
+   ],
+   "bridge_note": "The decision is kernelDecide compiled (darmkernel is K4DecisionServer; K5); the request the broker builds is tested against B3 on sampled inputs."
   },
   {
    "id": "evidence-before-effect",
@@ -557,7 +583,8 @@
    ],
    "correspondence": "Evidence tests and probe P3 stop the broker between record and effect and check what the log says.",
    "counterexample": "An effect performed before its prepared record is durable could leave no evidence after a crash.",
-   "limitation": "An outcome that cannot be recorded is reported as evidence unavailable, and the effect's status is then settled by reconciliation."
+   "limitation": "An outcome that cannot be recorded is reported as evidence unavailable, and the effect's status is then settled by reconciliation.",
+   "bridge": "tested"
   },
   {
    "id": "reconciliation",
@@ -579,7 +606,8 @@
    ],
    "correspondence": "Crash tests and three-state settlement use B5's verdict on a fresh observation.",
    "counterexample": "Treating an unresolved outcome as success would spend an intent for an effect that may not have happened.",
-   "limitation": "ABA: an outside writer restoring the exact previous state is indistinguishable from no effect."
+   "limitation": "ABA: an outside writer restoring the exact previous state is indistinguishable from no effect.",
+   "bridge": "tested"
   },
   {
    "id": "burst-availability",
@@ -594,7 +622,8 @@
    ],
    "correspondence": "Probe P10: 100 simultaneous clients, one intent, none dropped; the dropped clients' errors are reported.",
    "counterexample": "With a backlog of 64, a 100-client burst lost 15 to 21 clients under the local harness.",
-   "limitation": "Availability, not safety; the backlog is capped by the kernel's somaxconn."
+   "limitation": "Availability, not safety; the backlog is capped by the kernel's somaxconn.",
+   "bridge": "tested"
   },
   {
    "id": "path-race-free",
@@ -610,7 +639,8 @@
    ],
    "correspondence": "Probe P1 races a symlink swap against the broker; path_diagnosis asserts every refusal and its cause.",
    "counterexample": "A check-then-open on a path string lets a symlink swapped in between redirect the effect.",
-   "limitation": "Hard links are outside the model; the resolution is Linux-specific (openat with O_NOFOLLOW)."
+   "limitation": "Hard links are outside the model; the resolution is Linux-specific (openat with O_NOFOLLOW).",
+   "bridge": "tested"
   },
   {
    "id": "authorized-effect-chain",
@@ -636,7 +666,8 @@
    ],
    "correspondence": "E28 composes the chain in the model; its one broker hypothesis (each request identifier belongs to one invocation) is checked at runtime by request_link, which also follows each attested file back to the invocation that intended exactly its content.",
    "counterexample": "Without the request link, an attestation could name a request performed for a different invocation, and the file's content need not be the authorized one.",
-   "limitation": "Pinned writes only (deletes and renames are not authorized effects in E26's correspondence); the implementation's correspondence to the models is tested, not proved; the physical disk is B8's model plus E2's transfer assumption."
+   "limitation": "Pinned writes only (deletes and renames are not authorized effects in E26's correspondence); the implementation's correspondence to the models is tested, not proved; the physical disk is B8's model plus E2's transfer assumption.",
+   "bridge": "tested"
   },
   {
    "id": "rename-no-laundering",
@@ -666,7 +697,8 @@
    ],
    "correspondence": "The broker enforces E29's attestation-faithfulness before any record or effect: the source's attestation must verify, name the source's path, and name its current content.",
    "counterexample": "Before this check, a file created outside the broker and renamed through it came out attested, with verification clean: content-faithful renames launder (rename_launders_foreign_content).",
-   "limitation": "Files placed outside the broker cannot be renamed through it; they must be written through it, under an authorized request. Rests on the secrecy of the signing key."
+   "limitation": "Files placed outside the broker cannot be renamed through it; they must be written through it, under an authorized request. Rests on the secrecy of the signing key.",
+   "bridge": "tested"
   },
   {
    "id": "rename-attribution",
@@ -692,7 +724,8 @@
    ],
    "correspondence": "The rename's prepared record carries the source attestation it moved; rename_lineage follows a renamed file's attestation back through it to the write that intended exactly its content.",
    "counterexample": "Without attestation-faithful renames, a rename could move foreign content, and the lineage would end at no write (rename_laundering).",
-   "limitation": "The capstone assumes the content was written once, under the authorized request; deletes are not attributed (an absence carries no attestation)."
+   "limitation": "The capstone assumes the content was written once, under the authorized request; deletes are not attributed (an absence carries no attestation).",
+   "bridge": "tested"
   },
   {
    "id": "read-attribution",
@@ -740,7 +773,40 @@
    ],
    "correspondence": "The verdict compares the attested digest with the digest of the bytes returned, the content-matching gate of E33's fileChannel; p17 checks a tampered read (attestation kept, content changed) is marked unattributed or refused, an untampered read is attributed to its write's request, and a foreign-created file is unattributed. Vouching (E33b's twoSource channel) names an exact digest; p17 checks a vouched upload is attributed to the principal under the gate, is refused once changed, and that a manifest inside the workspace stops the broker from starting.",
    "counterexample": "Without the gate a consumer reads tampered content as if the broker wrote it (P17 EXPOSED on 0.19.0); a presence-only gate is defeated the same way (presence_gate_defeated_by_tamper). A manifest the agent can write launders foreign content into attested reads (agent_manifest_launders).",
-   "limitation": "The verdict is advisory unless read_requires_attestation is set or the consumer gates on it; content from outside the broker is attributed only if the principal vouches for its exact digest; vouching attributes provenance, not truth or safety; the manifest's location is checked against the workspace, but other ways the agent could reach it (shared mounts, a writable parent) are the deployment's to exclude; Freshness is the log's: a read whose content and attestation were restored after the broker replaced or deleted them is refused, because the path's latest log entry is not its write (B8p replay_accepted_by_attestation_caught_by_log); a reader without the log cannot check freshness."
+   "limitation": "The verdict is advisory unless read_requires_attestation is set or the consumer gates on it; content from outside the broker is attributed only if the principal vouches for its exact digest; vouching attributes provenance, not truth or safety; the manifest's location is checked against the workspace, but other ways the agent could reach it (shared mounts, a writable parent) are the deployment's to exclude; Freshness is the log's: a read whose content and attestation were restored after the broker replaced or deleted them is refused, because the path's latest log entry is not its write (B8p replay_accepted_by_attestation_caught_by_log); a reader without the log cannot check freshness.",
+   "bridge": "tested"
+  },
+  {
+   "id": "kernel-wire-contract",
+   "claim": "The broker reads a kernel admission only when the proved kernel admitted the request the kernel parsed; an error or malformed reply never reads as an admission.",
+   "lean": [
+    {
+     "module": "K5WireContract",
+     "theorems": [
+      "reply_cases",
+      "error_decodes",
+      "admit_only_by_kernel",
+      "kernel_admit_reaches_python"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/kernel_wire_contract.py"
+   ],
+   "implementation": [
+    "darm_guard/kernel.py:KernelClient"
+   ],
+   "correspondence": "darmkernel is K4DecisionServer compiled; K5 proves the reply contract over its code; kernel_wire_contract checks the broker's decoder against pyAdmits on every reply class and the real kernel's replies against decisionJson4.",
+   "counterexample": "Before the check, a reply that was valid JSON but not an object made the decoder raise instead of reject.",
+   "limitation": "The encoding side (that the request the broker sends is the invocation it means) is tested, not proved.",
+   "bridge": "proved",
+   "trusted_base": [
+    "the Lean compiler and runtime",
+    "Lean's Json.parse and the derived FromJson instances",
+    "the kernel server's I/O loop",
+    "Python's json.loads",
+    "the broker's decoder matching pyAdmits (checked exhaustively, not proved)"
+   ]
   }
  ]
 }
