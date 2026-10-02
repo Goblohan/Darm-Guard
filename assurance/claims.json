@@ -1,7 +1,7 @@
 {
  "darm_monitor": {
   "repo": "https://github.com/Goblohan/darm-monitor.git",
-  "commit": "83002a0"
+  "commit": "1454a94"
  },
  "claims": [
   {
@@ -693,6 +693,54 @@
    "correspondence": "The rename's prepared record carries the source attestation it moved; rename_lineage follows a renamed file's attestation back through it to the write that intended exactly its content.",
    "counterexample": "Without attestation-faithful renames, a rename could move foreign content, and the lineage would end at no write (rename_laundering).",
    "limitation": "The capstone assumes the content was written once, under the authorized request; deletes are not attributed (an absence carries no attestation)."
+  },
+  {
+   "id": "read-attribution",
+   "claim": "Every read through the broker carries a verdict on whether its content is attributed, and to whom: to a broker write (the attestation verifies, names the path read, and its digest equals the digest of the exact content returned) or to the principal (a principal-held manifest names the path and that digest). With read_requires_attestation, an unattributed read is refused and nothing is delivered.",
+   "lean": [
+    {
+     "module": "E33AttestedChannels",
+     "theorems": [
+      "gated_within",
+      "gated_downstream_sound",
+      "gate_necessary",
+      "file_faithful",
+      "presence_gate_defeated_by_tamper",
+      "matching_gate_refuses_tamper"
+     ]
+    },
+    {
+     "module": "E33bPrincipalVouching",
+     "theorems": [
+      "two_source_faithful",
+      "broker_tag_is_written",
+      "principal_tag_is_vouched",
+      "vouch_is_content_exact",
+      "agent_manifest_launders"
+     ]
+    },
+    {
+     "module": "B8pPathBoundAttestation",
+     "theorems": [
+      "replay_accepted_by_attestation_caught_by_log"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/p17_tampered_read.py",
+    "tests/read_freshness.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:_broker_verdict",
+    "darm_guard/broker.py:_check_attestation",
+    "darm_guard/broker.py:_latest_entries",
+    "darm_guard/broker.py:_principal_held",
+    "darm_guard/broker.py:_read_verdict",
+    "darm_guard/broker.py:_vouched"
+   ],
+   "correspondence": "The verdict compares the attested digest with the digest of the bytes returned, the content-matching gate of E33's fileChannel; p17 checks a tampered read (attestation kept, content changed) is marked unattributed or refused, an untampered read is attributed to its write's request, and a foreign-created file is unattributed. Vouching (E33b's twoSource channel) names an exact digest; p17 checks a vouched upload is attributed to the principal under the gate, is refused once changed, and that a manifest inside the workspace stops the broker from starting.",
+   "counterexample": "Without the gate a consumer reads tampered content as if the broker wrote it (P17 EXPOSED on 0.19.0); a presence-only gate is defeated the same way (presence_gate_defeated_by_tamper). A manifest the agent can write launders foreign content into attested reads (agent_manifest_launders).",
+   "limitation": "The verdict is advisory unless read_requires_attestation is set or the consumer gates on it; content from outside the broker is attributed only if the principal vouches for its exact digest; vouching attributes provenance, not truth or safety; the manifest's location is checked against the workspace, but other ways the agent could reach it (shared mounts, a writable parent) are the deployment's to exclude; Freshness is the log's: a read whose content and attestation were restored after the broker replaced or deleted them is refused, because the path's latest log entry is not its write (B8p replay_accepted_by_attestation_caught_by_log); a reader without the log cannot check freshness."
   }
  ]
 }

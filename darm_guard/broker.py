@@ -60,6 +60,8 @@ class BrokerConfig:
     issued_at: Optional[datetime] = None   # credential lifetime start
     ttl_seconds: Optional[float] = None    # credential lifetime length
     patterns: Tuple[str, ...] = ()         # registry prefixes: values yield 'derived'
+    read_requires_attestation: bool = False  # E33: refuse reads not attributed to a broker write
+    vouched_manifest: Optional[str] = None   # E33b: principal-held (path, sha256) pairs
 
     @staticmethod
     def load(config_path: str, registry_path: str) -> "BrokerConfig":
@@ -71,7 +73,9 @@ class BrokerConfig:
         return BrokerConfig(cfg["policy"], tuple(cfg["credential_tools"]),
                             frozenset(reg), os.path.realpath(cfg["workspace"]),
                             datetime.fromisoformat(issued) if issued else None,
-                            cfg.get("ttl_seconds"), pats)
+                            cfg.get("ttl_seconds"), pats,
+                            bool(cfg.get("read_requires_attestation", False)),
+                            _principal_held(cfg.get("vouched_manifest"), cfg["workspace"]))
 
     def expired(self, now: Optional[datetime] = None) -> bool:
         if self.issued_at is None or self.ttl_seconds is None:
@@ -451,6 +455,90 @@ def _attestation(keys, rid: str, target: str, digest: str) -> bytes:
     return keys.ring.sign(rid, target, digest)
 
 
+_NO_LOG = object()   # the verdict's freshness check is skipped only for direct callers
+
+
+def _latest_entries(audit_path):
+    """The latest successful entry per target, typed (B8: write or delete), and
+    the requests logged. The one reading of the log, shared by verify_world and
+    the read verdict, so the two cannot disagree about what is current."""
+    latest, logged = {}, set()
+    if not audit_path or not os.path.exists(audit_path):
+        return latest, logged
+    for line in open(audit_path):
+        if not line.strip():
+            continue
+        e = json.loads(line)
+        logged.add(e.get("request_id"))
+        if e.get("event") in ("outcome", "reconciled") and e.get("target") and (
+                e.get("effect") == "succeeded" or e.get("reconciliation") == "confirmedSuccess"):
+            latest[e["target"]] = (e["request_id"],
+                                   "delete" if e.get("tool") == "delete_file" else "write")
+            if e.get("tool") == "rename_file" and e.get("source"):
+                latest[e["source"]] = (e["request_id"], "delete")
+    return latest, logged
+
+
+def _principal_held(path, workspace):
+    """darm-monitor E33b agent_manifest_launders: a manifest the agent can write
+    is a laundering channel, so the broker refuses one inside the workspace."""
+    if not path:
+        return None
+    real, ws = os.path.realpath(path), os.path.realpath(workspace)
+    if real == ws or real.startswith(ws + os.sep):
+        raise ValueError(f"vouched_manifest {path} is inside the workspace; it must be principal-held")
+    return real
+
+
+def _vouched(manifest, path: str, digest: str) -> bool:
+    """Does the principal's manifest name exactly this path and digest?
+    Read fresh on every read, so the principal's edits apply at once."""
+    if not manifest or not os.path.exists(manifest):
+        return False
+    for line in open(manifest):
+        parts = line.split()
+        if len(parts) == 2 and parts[0] == path and parts[1] == f"sha256={digest}":
+            return True
+    return False
+
+
+def _read_verdict(keys, path: str, content: str, raw, manifest=None, latest=_NO_LOG) -> dict:
+    """darm-monitor E33: is this read attributed? The verdict is computed from
+    the exact bytes returned: the attestation verifies (a foreign actor cannot
+    mint one), names this path, and its digest equals the digest of the
+    content read. A presence-only check is not enough: a tamper keeps the
+    attestation and changes the content (E33.presence_gate_defeated_by_tamper)."""
+    digest = hashlib.sha256(content.encode()).hexdigest()
+    verdict = _broker_verdict(keys, path, digest, raw, latest)
+    if not verdict["attributed"] and _vouched(manifest, path, digest):
+        return {"attributed": True, "source": "principal", "content_matches": True,
+                "broker_verdict": verdict["reason"]}
+    return verdict
+
+
+def _broker_verdict(keys, path: str, digest: str, raw, latest=_NO_LOG) -> dict:
+    if keys is None:
+        return {"attributed": False, "reason": "broker has no attestation key"}
+    if not raw:
+        return {"attributed": False, "reason": "no attestation: content not written by the broker"}
+    a = _check_attestation(keys, raw)
+    if a is None:
+        return {"attributed": False, "reason": "attestation does not verify"}
+    if a.get("target") != path:
+        return {"attributed": False, "rid": a.get("rid"), "reason": "attestation names another path"}
+    if a.get("digest") != digest:
+        return {"attributed": False, "rid": a.get("rid"), "content_matches": False,
+                "reason": "content differs from the attested content (modified outside the broker)"}
+    if latest is not _NO_LOG and latest != (a.get("rid"), "write"):
+        # B8p replay_accepted_by_attestation_caught_by_log: the attestation binds
+        # origin and location; only the log binds freshness
+        return {"attributed": False, "rid": a.get("rid"), "content_matches": True,
+                "reason": "the log's latest entry for this path is not this write "
+                          "(replayed or superseded content)"}
+    return {"attributed": True, "source": "broker", "rid": a.get("rid"), "content_matches": True,
+            "scheme": a.get("scheme")}
+
+
 def _check_attestation(keys, raw):
     """The attestation with its scheme ('v2' or 'legacy'), or None if it does not
     verify. v1 (HMAC) verifies only while the legacy secret is present."""
@@ -592,7 +680,12 @@ def _execute(cfg: BrokerConfig, inv: dict, expected=None, attest=None,
         if inv["tool"] == "read_file":
             fd = os.open(leaf, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=pfd)
             with os.fdopen(fd) as f:
-                return {"content": f.read()}
+                content = f.read()
+                try:   # from the same open file as the content: never re-resolved
+                    raw_att = os.getxattr(f.fileno(), XATTR)
+                except OSError:
+                    raw_att = None
+                return {"content": content, "_raw_attestation": raw_att}
         if inv["tool"] == "write_file":
             content = args.get("content", "")
             tmp = f".{leaf}.darm-tmp-{uuid.uuid4().hex}"
@@ -916,6 +1009,17 @@ class Broker:
         result = _execute(self.cfg, inv, before,
                           (self.key, rid, real) if self.key and intended is not None else None,
                           resp.get("private"), resp.get("source_attestation"))
+        if tool == "read_file" and "content" in result:
+            path_arg = {a["key"]: a["value"] for a in inv["args"]}.get("path", "")
+            raw_att = result.get("_raw_attestation")
+            result = {k: v for k, v in result.items() if k != "_raw_attestation"}
+            verdict = _read_verdict(self.key, path_arg, result["content"], raw_att,
+                                    self.cfg.vouched_manifest,
+                                    _latest_entries(self.audit.path)[0].get(path_arg))
+            result = dict(result, read_attestation=verdict)
+            if self.cfg.read_requires_attestation and not verdict["attributed"]:
+                result = {"error": "read refused: " + verdict["reason"],
+                          "failure": "attestation", "read_attestation": verdict}
         ok = "error" not in result
 
         response_fields = dict(
@@ -980,6 +1084,7 @@ class Broker:
             "private": response.get("private"),
             "destination_before": response.get("destination_before"),
             "source_attestation": response.get("source_attestation"),
+            "read_attestation": response.get("read_attestation"),
             "idempotency_key": response.get("idempotency_key"),
             "before_state": response.get("before_state"),
             "intended_state": response.get("intended_state"),
@@ -1376,20 +1481,9 @@ def verify_world(cfg: BrokerConfig, audit_path: str, key: bytes) -> dict:
     are not governed and not reported. Limits: filesystems without user
     xattrs carry no attestations; truncation is detectable only for requests
     whose files survive (an effect-free tail needs an external checkpoint)."""
-    findings, latest, logged = [], {}, set()
+    findings = []
     legacy = []   # v1 (HMAC) attestations still verifying during the transition
-    for line in open(audit_path):
-        if not line.strip():
-            continue
-        e = json.loads(line)
-        logged.add(e.get("request_id"))
-        if e.get("event") in ("outcome", "reconciled") and e.get("target") and (
-                e.get("effect") == "succeeded" or e.get("reconciliation") == "confirmedSuccess"):
-            # B8: the latest entry per target is typed (write or delete)
-            latest[e["target"]] = (e["request_id"],
-                                   "delete" if e.get("tool") == "delete_file" else "write")
-            if e.get("tool") == "rename_file" and e.get("source"):
-                latest[e["source"]] = (e["request_id"], "delete")
+    latest, logged = _latest_entries(audit_path)   # B8: the latest entry per target, typed
     root = cfg.workspace
     for dirpath, _dirs, files in os.walk(root, followlinks=False):
         for name in files:

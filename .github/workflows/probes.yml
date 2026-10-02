@@ -200,3 +200,13 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/rename_lineage.py
+
+      - name: A read is attributed only if its content matches its attestation (E33, P17)
+        run: |
+          ./tests/setup_demo.sh
+          python tests/p17_tampered_read.py
+
+      - name: A read is attributed only if it is current (a restored file is refused; the log binds freshness)
+        run: |
+          ./tests/setup_demo.sh
+          python tests/read_freshness.py
