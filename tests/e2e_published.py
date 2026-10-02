@@ -153,6 +153,27 @@ check("a rename refuses a file the broker did not write (no laundering)",
       lr.get("failure") == "attestation"
       and not os.path.exists(os.path.join(cfg.workspace, "reports", "e2e_laundered.md")), lr.get("failure"))
 
+import dataclasses
+fa = f"{D}/e2e_fresh.jsonl"
+for f in (fa, fa + ".key", fa + ".pub.json", fa + ".lock"):
+    if os.path.exists(f):
+        os.remove(f)
+fb = B.Broker(dataclasses.replace(cfg, read_requires_attestation=True), _KC(), B.AuditLog(fa),
+              None, None, B.Keys.generate())
+fp = os.path.join(cfg.workspace, "reports", "e2e_fresh.md")
+FL = "/workspace/reports/e2e_fresh.md"
+fb.handle({"tool": "write_file", "args": [["path", FL], ["content", "version one"]]})
+old_bytes, old_att = open(fp).read(), os.getxattr(fp, B.XATTR)
+fb.handle({"tool": "write_file", "args": [["path", FL], ["content", "version two"]]})
+cur = fb.handle({"tool": "read_file", "args": [["path", FL]]})
+with open(fp, "w") as fh:
+    fh.write(old_bytes)
+os.setxattr(fp, B.XATTR, old_att)
+rest = fb.handle({"tool": "read_file", "args": [["path", FL]]})
+check("a current read is attributed; a restored one is refused (read freshness)",
+      (cur.get("read_attestation") or {}).get("attributed") is True and rest.get("failure") == "attestation",
+      rest.get("error"))
+
 from darm_guard.coverage import coverage, kernel_adapter
 rows = coverage(kernel_adapter)
 check("the coverage map: every case self-checked, every dimension covered, the untrusted payload admitted",
