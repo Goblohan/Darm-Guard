@@ -183,6 +183,30 @@ for f in (fp, fa, fa + ".key", fa + ".pub.json", fa + ".lock"):   # leave no sta
     if os.path.exists(f):
         os.remove(f)
 
+ka = f"{D}/e2e_k6.jsonl"
+for f in (ka, ka + ".key", ka + ".pub.json", ka + ".lock"):
+    if os.path.exists(f):
+        os.remove(f)
+kb = B.Broker(cfg, _KC(), B.AuditLog(ka), None, None, B.Keys.generate())
+KP = "/workspace/reports/e2e_k6.md"
+kargs = [["path", KP], ["content", "k6"]]
+kw = kb.handle({"tool": "write_file", "args": kargs})
+kprep = [e for e in (json.loads(l) for l in open(ka) if l.strip())
+         if e.get("event") == "prepared" and e.get("request_id") == kw.get("request_id")]
+kd = _KC().decide({"policy": cfg.policy,
+                   "credential": {"tools": list(cfg.credential_tools), "expired": cfg.expired(None)},
+                   "registry": {"values": sorted(cfg.registry), "prefixes": list(cfg.patterns)},
+                   "proposal": {"tool": "write_file", "args": kargs}})
+check("the kernel canonicalizes: what was prepared is exactly the kernel's invocation (by hash)",
+      kw.get("effect") == "succeeded" and bool(kprep) and kd.invocation is not None
+      and kprep[0].get("invocation_hash") == B.invocation_hash(kd.invocation), kw.get("effect"))
+kn = kb.handle({"tool": "write_file", "args": [["path", "//workspace/reports/e2e_k6b.md"], ["content", "x"]]})
+check("a path POSIX keeps but normalPath refuses ('//...') is refused before the decision",
+      kn.get("error") == "path not in normal form", kn.get("error"))
+for f in (os.path.join(cfg.workspace, "reports", "e2e_k6.md"), ka, ka + ".key", ka + ".pub.json", ka + ".lock"):
+    if os.path.exists(f):
+        os.remove(f)
+
 from darm_guard.coverage import coverage, kernel_adapter
 rows = coverage(kernel_adapter)
 check("the coverage map: every case self-checked, every dimension covered, the untrusted payload admitted",
