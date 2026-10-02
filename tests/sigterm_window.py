@@ -1,11 +1,20 @@
 """A broker stopped by SIGTERM at any moment after it logged start ends with a
-stop record and a final checkpoint, not only when the signal comes late.
-Signals 25 brokers at varied delays from launch. Predictions first."""
+stop record and a final checkpoint. Signals are aimed at the window: each
+broker is watched until start appears, then signalled 0-10 ms later (a few
+are signalled early, during set-up). The test fails if too few signals land
+after start, so it cannot pass without exercising the window. Predictions first."""
 import json, os, random, shutil, signal, subprocess, sys, time
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 D = "/tmp/darmdemo"
 random.seed(7)
-lost, signalled_after_start = [], 0
+lost, after_start = [], 0
+
+def events(M):
+    try:
+        return [json.loads(l).get("event") for l in open(M) if l.strip()]
+    except (OSError, ValueError):
+        return []
+
 for i in range(25):
     M = f"{D}/sw{i}.jsonl"; S = f"{D}/sw_sink{i}"; sock = f"/tmp/darm-sw{i}.sock"
     for f in (M, M + ".key", M + ".pub.json", M + ".lock", sock):
@@ -15,15 +24,26 @@ for i in range(25):
                           "--config", f"{D}/config.json", "--registry", f"{D}/registry.txt",
                           "--socket", sock, "--audit", M, "--checkpoint-sink", S, "--checkpoint-every", "1000"],
                          env=dict(os.environ, PYTHONPATH=ROOT), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(random.choice([0.0, 0.05, 0.1, 0.2, 0.3, 0.4]) + random.random() * 0.05)
+    if i % 5 == 0:
+        time.sleep(random.random() * 0.2)                    # early: during set-up
+    else:
+        deadline = time.time() + 20
+        while time.time() < deadline and "start" not in events(M):
+            time.sleep(0.001)
+        time.sleep(random.choice([0.0, 0.0005, 0.001, 0.002, 0.005, 0.01]))   # the window
     p.send_signal(signal.SIGTERM)
     p.wait(timeout=10)
-    ev = [json.loads(l).get("event") for l in open(M)] if os.path.exists(M) else []
+    ev = events(M)
     if "start" in ev:
-        signalled_after_start += 1
+        after_start += 1
         if ev[-1] != "stop":
             lost.append((i, ev[-1]))
-print(f"  brokers signalled after logging start: {signalled_after_start}")
-print(f"  logs that end without stop: {lost}   (predicted [])")
-print(f"\n{'1/1' if not lost else '0/1'} predictions confirmed")
-sys.exit(0 if not lost else 1)
+
+results = []
+def check(label, got, predicted):
+    results.append(got == predicted)
+    print(f"  {label}: {got}   (predicted {predicted})")
+check("1. enough signals landed after start to exercise the window (at least 15 of 25)", after_start >= 15, True)
+check("2. every log with a start record ends with stop", lost, [])
+print(f"\n{sum(results)}/{len(results)} predictions confirmed")
+sys.exit(0 if all(results) else 1)
