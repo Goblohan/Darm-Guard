@@ -1,7 +1,7 @@
 {
  "darm_monitor": {
   "repo": "https://github.com/Goblohan/darm-monitor.git",
-  "commit": "ad69af5"
+  "commit": "40963aa"
  },
  "claims": [
   {
@@ -541,11 +541,27 @@
      "theorems": [
       "admissible_lift"
      ]
+    },
+    {
+     "module": "K6KernelCanonicalization",
+     "theorems": [
+      "k6_admits_canonical",
+      "b3_admits_escaping_destination"
+     ]
+    },
+    {
+     "module": "K6DecisionServer",
+     "theorems": [
+      "admit_only_by_kernel6",
+      "admit6_returns_canonical"
+     ]
     }
    ],
    "tests": [
     "tests/kernel_dimensions.py",
-    "tests/broker_attacks.py"
+    "tests/broker_attacks.py",
+    "tests/normal_form_mirror.py",
+    "tests/canonical_agreement.py"
    ],
    "implementation": [
     "darm_guard/kernel.py:KernelClient"
@@ -557,9 +573,10 @@
    "trusted_base": [
     "the Lean compiler and runtime",
     "Lean's Json.parse and the derived FromJson instances",
-    "the kernel server's I/O loop"
+    "the kernel server's I/O loop",
+    "the broker executes the invocation it decodes from the reply (checked by hash, not proved)"
    ],
-   "bridge_note": "The decision is kernelDecide compiled (darmkernel is K4DecisionServer; K5); the request the broker builds is tested against B3 on sampled inputs."
+   "bridge_note": "From proposal to decision is the model compiled: kernel-v0.3.0 computes wellFormed, B3's canonicalize and kernelDecide (K6), and the broker executes the invocation it returns (decided = executed, checked by hash in canonical_agreement); the broker's own canonicalization is cross-checked on every request and refused on disagreement."
   },
   {
    "id": "evidence-before-effect",
