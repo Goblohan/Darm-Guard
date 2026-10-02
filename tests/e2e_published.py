@@ -18,6 +18,9 @@ digest = hashlib.sha256(open(kp, "rb").read()).hexdigest() if kp else None
 check("kernel installed and its SHA-256 matches the pinned one", digest == I.KERNEL_SHA256, f"{kp}")
 
 D, SOCK = "/tmp/darmdemo", "/tmp/darm-e2e.sock"
+import subprocess as _sp   # start from a fresh fixture, as release.sh does, so a rerun
+_sp.run([os.path.join(os.path.dirname(os.path.abspath(__file__)), "setup_demo.sh")],
+        check=True, stdout=_sp.DEVNULL)   # gives the release's answer whatever earlier runs left
 AUDIT = f"{D}/e2e.jsonl"
 for f in (AUDIT, AUDIT + ".key", AUDIT + ".pub.json", AUDIT + ".legacy.key", AUDIT + ".lock", f"{D}/workspace/reports/e2e.md"):
     if os.path.exists(f):
@@ -152,6 +155,9 @@ lr = lb.handle({"tool": "rename_file", "args": [["path", "/workspace/reports/e2e
 check("a rename refuses a file the broker did not write (no laundering)",
       lr.get("failure") == "attestation"
       and not os.path.exists(os.path.join(cfg.workspace, "reports", "e2e_laundered.md")), lr.get("failure"))
+for f in (os.path.join(cfg.workspace, "reports", "e2e_foreign.md"), la, la + ".key", la + ".pub.json", la + ".lock"):
+    if os.path.exists(f):
+        os.remove(f)
 
 import dataclasses
 fa = f"{D}/e2e_fresh.jsonl"
@@ -173,6 +179,9 @@ rest = fb.handle({"tool": "read_file", "args": [["path", FL]]})
 check("a current read is attributed; a restored one is refused (read freshness)",
       (cur.get("read_attestation") or {}).get("attributed") is True and rest.get("failure") == "attestation",
       rest.get("error"))
+for f in (fp, fa, fa + ".key", fa + ".pub.json", fa + ".lock"):   # leave no stale file behind
+    if os.path.exists(f):
+        os.remove(f)
 
 from darm_guard.coverage import coverage, kernel_adapter
 rows = coverage(kernel_adapter)
