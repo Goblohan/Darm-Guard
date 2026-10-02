@@ -45,5 +45,24 @@ def check(label, got, predicted):
     print(f"  {label}: {got}   (predicted {predicted})")
 check("1. enough signals landed after start to exercise the window (at least 15 of 25)", after_start >= 15, True)
 check("2. every log with a start record ends with stop", lost, [])
+
+# deterministic: the broker pauses 0.5 s between start and the try, and the
+# signal comes 0.1 s into the pause, so it always lands in the window
+M = f"{D}/sw_det.jsonl"; S = f"{D}/sw_det_sink"; sock = "/tmp/darm-swdet.sock"
+for f in (M, M + ".key", M + ".pub.json", M + ".lock", sock):
+    if os.path.exists(f): os.remove(f)
+shutil.rmtree(S, ignore_errors=True)
+p = subprocess.Popen([sys.executable, "-c", "from darm_guard.broker import main; main()",
+                      "--config", f"{D}/config.json", "--registry", f"{D}/registry.txt",
+                      "--socket", sock, "--audit", M, "--checkpoint-sink", S, "--checkpoint-every", "1000"],
+                     env=dict(os.environ, PYTHONPATH=ROOT, DARM_TEST_PAUSE_AFTER_START="0.5"),
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+deadline = time.time() + 20
+while time.time() < deadline and "start" not in events(M):
+    time.sleep(0.001)
+time.sleep(0.1)
+p.send_signal(signal.SIGTERM)
+p.wait(timeout=10)
+check("3. a signal inside a widened window after start still ends in stop", events(M)[-1:], ["stop"])
 print(f"\n{sum(results)}/{len(results)} predictions confirmed")
 sys.exit(0 if all(results) else 1)

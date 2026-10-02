@@ -1650,6 +1650,10 @@ def main() -> None:
     cfg_hash, reg_hash = sha256_file(a.config), sha256_file(a.registry)
     srv.broker.audit.append({"event": "start", "config_sha256": cfg_hash,
                              "registry_sha256": reg_hash})
+    _pause = os.environ.get("DARM_TEST_PAUSE_AFTER_START")   # test hook: widens the window
+    if _pause:                                               # between start and the try, so
+        import time as _time                                 # sigterm_window can hit it
+        _time.sleep(float(_pause))                           # deterministically; unset otherwise
     try:
         state["armed"] = True
         if state["pending"]:
