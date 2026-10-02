@@ -60,6 +60,7 @@ MUTATIONS = {
     "rename attestation check off": [('if tool == "rename_file" and self.key is not None:', 'if False:')],
     "read freshness off": [('if latest is not _NO_LOG and latest != (a.get("rid"), "write"):', 'if False:')],
     "destination unchecked before the decision": [('PATH_KEYS = ("path", "destination")', 'PATH_KEYS = ("path",)')],
+    "SIGTERM acted on before the try": [('if state["armed"]:', 'if True:')],
     "premises ignored": [('next((i for i in fitting if _premise_problem(self.cfg, i) is None), None)',
                           'next((i for i in fitting), None)')],
 }
