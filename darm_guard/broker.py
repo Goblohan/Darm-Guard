@@ -38,7 +38,7 @@ from typing import List, Optional, Tuple
 
 from .kernel import KernelClient
 
-PATH_KEYS = ("path",)
+PATH_KEYS = ("path", "destination")
 LOGICAL_ROOT = "/workspace/"
 
 

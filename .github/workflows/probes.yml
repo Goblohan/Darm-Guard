@@ -218,3 +218,8 @@ jobs:
 
       - name: Every claim states its bridge from model to implementation (construction, proved, tested, assumed), counted
         run: python scripts/check_bridges.py
+
+      - name: Every path-valued argument is in normal form before the decision (a rename's destination included)
+        run: |
+          ./tests/setup_demo.sh
+          python tests/destination_normal_form.py
