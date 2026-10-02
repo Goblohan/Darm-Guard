@@ -65,6 +65,7 @@ class KernelDecision:
     failure: Optional[str] = None
     error: Optional[str] = None
     raw: str = ""
+    invocation: Optional[dict] = None   # kernel-v0.3.0: the canonical invocation it admitted
 
     def __bool__(self) -> bool:
         return self.admitted
@@ -123,7 +124,9 @@ class KernelClient:
         if not isinstance(data, dict):   # darm-monitor K5 pyAdmits: only an object can admit
             return KernelDecision(False, error="kernel reply is not a JSON object", raw=line.strip())
         if data.get("decision") == "admit":
-            return KernelDecision(True, raw=line.strip())
+            inv = data.get("invocation")
+            return KernelDecision(True, raw=line.strip(),
+                                  invocation=inv if isinstance(inv, dict) else None)
         return KernelDecision(False, failure=data.get("failure"),
                               error=data.get("error"), raw=line.strip())
 

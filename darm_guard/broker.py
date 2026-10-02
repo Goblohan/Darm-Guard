@@ -164,8 +164,14 @@ def parse_proposal(obj) -> Optional[Tuple[str, List[Tuple[str, str]]]]:
 
 
 def path_in_normal_form(value: str) -> bool:
-    return (value.startswith("/") and os.path.normpath(value) == value
-            and ".." not in value.split("/"))
+    """darm-monitor K6 normalPath, exactly: '/', or one leading slash followed by
+    components that are never empty, '.' or '..'. Stricter than POSIX normpath,
+    which keeps '//a'; checked against the kernel by tests/normal_form_mirror.py."""
+    if value == "/":
+        return True
+    if not value.startswith("/"):
+        return False
+    return all(c not in ("", ".", "..") for c in value[1:].split("/"))
 
 
 def assign_prov(registry: frozenset, value: str, patterns=()) -> str:
@@ -767,7 +773,7 @@ def _basis(resp: dict) -> list:
     if d == "admit" and eff != "already_applied":
         claim("admitted by the kernel; the executed invocation is the decided one",
               ["DARM.Kernel.admit_sound", "DARM.Broker3.executed_is_canonical"],
-              ["A2"] + certified + ["broker certified against B3 on sampled inputs, not proved"])
+              ["A2"] + certified + ["canonicalization computed by the proved kernel (K6) and cross-checked on every request; execution tested, not proved"])
     if resp.get("intent_consumed"):
         claim("one principal-held intent was consumed", ["DARM.E24.execution_requires_intent"], ["A2", "A5"])
     if d == "admit" and eff in ("succeeded", "failed", "unknown"):
@@ -875,14 +881,23 @@ class Broker:
                 unmet = [_premise_problem(self.cfg, i) for i in fitting]
                 return inv, tool, {"decision": "reject", "failure": "intent",
                                    "error": ("premise not met: " + unmet[0]) if unmet else None}
+        # darm-monitor K6: the kernel canonicalizes the raw proposal itself and
+        # returns the invocation it admitted; the broker executes that one
         request = {"policy": self.cfg.policy,
                    "credential": {"tools": list(self.cfg.credential_tools),
                                   "expired": self.cfg.expired(now)},
-                   "invocation": inv}
+                   "registry": {"values": sorted(self.cfg.registry),
+                                "prefixes": list(self.cfg.patterns)},
+                   "proposal": {"tool": tool, "args": [[k, v] for k, v in args]}}
         d = self.kernel.decide(request)
         if not d.admitted:
             return inv, tool, {"decision": "reject", "failure": d.failure, "error": d.error}
-        return inv, tool, {"decision": "admit"}
+        if d.invocation != inv:
+            # every request cross-checks the broker's canonicalization against the
+            # proved one; a disagreement refuses before any effect
+            return inv, tool, {"decision": "reject", "failure": "semantic",
+                               "error": "the kernel's canonical invocation differs from the broker's"}
+        return d.invocation, tool, {"decision": "admit"}
 
     def handle(self, obj, peer=None) -> dict:
         """Evidence before effect. Never raises: any unexpected failure is

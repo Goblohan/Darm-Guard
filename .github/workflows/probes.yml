@@ -228,3 +228,13 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/sigterm_window.py
+
+      - name: The broker's normal form is K6's normalPath, exhaustively, against the real kernel
+        run: |
+          ./tests/setup_demo.sh
+          python tests/normal_form_mirror.py
+
+      - name: The broker executes the kernel's invocation and refuses when its own canonicalization disagrees
+        run: |
+          ./tests/setup_demo.sh
+          python tests/canonical_agreement.py
