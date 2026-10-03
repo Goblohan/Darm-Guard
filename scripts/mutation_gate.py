@@ -13,6 +13,8 @@ REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 BROKER = "darm_guard/broker.py"
 TARGETS = {   # mutations whose check lives outside the broker; every other mutation targets BROKER
     "kernel reply not bound to its request": "darm_guard/kernel.py",
+    "cone without callees": "scripts/effect_inventory.py",
+    "references are not routes": "scripts/effect_inventory.py",
 }
 
 LIFT = '''
@@ -67,6 +69,9 @@ MUTATIONS = {
     "canonical cross-check off": [('        if d.invocation != inv:', '        if False:')],
     "recovery rolls forward without a signed attestation": [('reattested = bool(a and a.get("target") == dst and a.get("rid") == e.get("request_id"))', 'reattested = True')],
     "kernel reply not bound to its request": [('        if data.get("nonce") != nonce:', '        if False:')],
+    "cone without callees": [('    down = closure(up, callees)', '    down = set()')],
+    "references are not routes": [('self.calls[self.qual()].add(n.attr)', 'pass'),
+                                  ('self.calls[self.qual()].add(n.id)', 'pass')],
     "premises ignored": [('next((i for i in fitting if _premise_problem(self.cfg, i) is None), None)',
                           'next((i for i in fitting), None)')],
 }
