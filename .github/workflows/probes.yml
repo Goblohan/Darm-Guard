@@ -247,3 +247,8 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/recovery_forgery.py
+
+      - name: A kernel reply answers only the request carrying its nonce (a stale or foreign reply is refused; K7)
+        run: |
+          ./tests/setup_demo.sh
+          python tests/kernel_reply_binding.py

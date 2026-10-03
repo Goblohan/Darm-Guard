@@ -9,15 +9,24 @@ from darm_guard.kernel import KernelClient, KernelGuard, KernelPolicy, ToolRule,
 
 FAILURES = ["temporal", "observation", "authority", "semantic", "provenance"]
 tmp = tempfile.mkdtemp(prefix="wire-")
+ECHO = """def _echo(reply, line):
+    try:
+        r, n = json.loads(reply), json.loads(line).get("nonce")
+    except ValueError:
+        return reply
+    if isinstance(r, dict) and n is not None:
+        r["nonce"] = n
+        return json.dumps(r, separators=(",", ":"))
+    return reply"""
 
 
 def stand_in(reply, mode="print"):
     """A stand-in kernel that answers every request with one fixed reply."""
     p = os.path.join(tmp, f"k{len(os.listdir(tmp))}")
-    body = {"print": f"    sys.stdout.write({reply!r} + chr(10)); sys.stdout.flush()",
+    body = {"print": f"    sys.stdout.write(_echo({reply!r}, _l) + chr(10)); sys.stdout.flush()",
             "silent": "    time.sleep(5)",
             "exit": "    sys.exit(0)"}[mode]
-    open(p, "w").write(f"#!/usr/bin/env python3\nimport sys, time\nfor _ in sys.stdin:\n{body}\n")
+    open(p, "w").write(f"#!/usr/bin/env python3\nimport json, sys, time\n{ECHO}\nfor _l in sys.stdin:\n{body}\n")
     os.chmod(p, os.stat(p).st_mode | stat.S_IEXEC)
     return p
 
@@ -57,8 +66,13 @@ check("3. a kernel that exits: rejected", admits("", "exit"), False)
 g = KernelGuard(KernelPolicy((ToolRule("t", (ArgRule("k", ("v",)),)),)), ["t"], "authoritative")
 rendered = {'{"decision":"admit"}'} | {'{"decision":"reject","failure":"%s"}' % f for f in FAILURES}
 a, r = g.check("t", {"k": "v"}), g.check("t", {"k": "w"})
-check("4. the real kernel's replies are exactly what decisionJson4 renders",
-      (bool(a), a.raw in rendered, bool(r), r.raw in rendered), (True, True, False, True))
+def unnonced(raw):
+    d = json.loads(raw); d.pop("nonce", None)
+    return json.dumps(d, separators=(",", ":"))
+check("4. the real kernel's replies are exactly what decisionJson4 renders (nonce aside)",
+      (bool(a), unnonced(a.raw) in rendered, bool(r), unnonced(r.raw) in rendered), (True, True, False, True))
+check("5. the real kernel echoes the broker's nonce in both replies",
+      ("nonce" in json.loads(a.raw), "nonce" in json.loads(r.raw)), (True, True))
 g.close()
 
 print(f"\n{sum(results)}/{len(results)} predictions confirmed")

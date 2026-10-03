@@ -16,6 +16,7 @@ import json
 import os
 import select
 import subprocess
+import uuid
 import sys
 import threading
 from dataclasses import dataclass
@@ -101,6 +102,10 @@ class KernelClient:
             self._proc = None
 
     def decide(self, request: dict) -> KernelDecision:
+        # darm-monitor K7: every request carries a fresh nonce, and only a reply
+        # carrying the same nonce answers it (reply_names_its_request)
+        nonce = uuid.uuid4().hex
+        request = dict(request, nonce=nonce)
         with self._lock:
             try:
                 if not self.path:
@@ -123,6 +128,10 @@ class KernelClient:
                 return KernelDecision(False, error=f"kernel unavailable: {e}")
         if not isinstance(data, dict):   # darm-monitor K5 pyAdmits: only an object can admit
             return KernelDecision(False, error="kernel reply is not a JSON object", raw=line.strip())
+        if data.get("nonce") != nonce:
+            self.close()   # out of step with the kernel: restart it before the next request
+            return KernelDecision(False, error="kernel reply does not answer this request (nonce mismatch)",
+                                  raw=line.strip())
         if data.get("decision") == "admit":
             inv = data.get("invocation")
             return KernelDecision(True, raw=line.strip(),
