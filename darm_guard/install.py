@@ -15,8 +15,8 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
-KERNEL_VERSION = "kernel-v0.3.0"
-KERNEL_SHA256 = "a22b1da0e7bc59639104978c8ef3068908109a2f092fbcf1f508589dfe5d5eab"
+KERNEL_VERSION = "kernel-v0.4.0"
+KERNEL_SHA256 = "6f6c3a21688047a2dd5111483ba9f25d7f4db83d3562d4da2cc616e00c484d31"
 KERNEL_URL = ("https://github.com/Goblohan/darm-monitor/releases/download/"
               f"{KERNEL_VERSION}/darmkernel-linux-x86_64")
 
