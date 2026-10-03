@@ -824,6 +824,32 @@
     "Python's json.loads",
     "the broker's decoder matching pyAdmits (checked exhaustively, not proved)"
    ]
+  },
+  {
+   "id": "effect-surface",
+   "claim": "No governed effect happens without a K6 admission for its request: every effect site in the broker is classified as closed (it executes the kernel's invocation for this request), a continuation of an admitted transition, or outside the governed workspace, and the build fails on any site that is new, changed or unclassified.",
+   "lean": [
+    {
+     "module": "K6DecisionServer",
+     "theorems": [
+      "admit6_returns_canonical",
+      "admit_only_by_kernel6"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/canonical_agreement.py",
+    "tests/recovery_forgery.py",
+    "tests/request_link.py"
+   ],
+   "implementation": [
+    "darm_guard/broker.py:_execute",
+    "darm_guard/broker.py:_recover_rename"
+   ],
+   "correspondence": "An exhaustive inventory of effect primitives, walked back to their entry points, classified in assurance/effect_sites.json and checked by scripts/check_effect_sites.py on every build.",
+   "counterexample": "A recovery that rolled forward on the log alone would perform a forged rename; recovery_forgery shows it rolls back.",
+   "limitation": "An audit, maintained by a gate, not a proof: it rests on the signing key's secrecy, on only the broker writing the log's unprotected tail, and on effects being reached through the primitives the inventory detects. Kernel replies carry no request nonce; replay of a reply for the same proposal is bounded, not closed.",
+   "bridge": "tested"
   }
  ]
 }

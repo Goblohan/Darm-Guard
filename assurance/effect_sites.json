@@ -1,0 +1,189 @@
+{
+ "note": "Every effect site in darm_guard, by module, function and effect type. The gate scripts/check_effect_sites.py reruns the inventory and fails on any difference.",
+ "assumptions": [
+  "the signing key is secret",
+  "only the broker writes the audit log's unprotected tail",
+  "effects are reached through the primitives the inventory detects (aliasing checked; dynamic dispatch outside the parser's view)"
+ ],
+ "functions": {
+  "broker.py:_execute": {
+   "verdict": "CLOSED",
+   "effects": {
+    "os.open(write)": 1,
+    "os.fdopen('w')": 1,
+    "os.setxattr": 1
+   },
+   "authority": "the K6 invocation admitted for this request: decide returns the kernel's invocation, cross-checked; inv is neither reassigned nor mutated before _execute, which takes every argument from it",
+   "tests": [
+    "tests/canonical_agreement.py",
+    "tests/request_link.py",
+    "tests/kernel_wire_contract.py"
+   ]
+  },
+  "broker.py:_cas_replace": {
+   "verdict": "CLOSED",
+   "effects": {
+    "os.replace": 2,
+    "os.unlink": 4
+   },
+   "authority": "reached only through _execute; the K6 invocation admitted for this request",
+   "tests": [
+    "tests/canonical_agreement.py",
+    "tests/request_link.py"
+   ]
+  },
+  "broker.py:_cas_delete": {
+   "verdict": "CLOSED",
+   "effects": {
+    "os.unlink": 2
+   },
+   "authority": "reached only through _execute; the K6 invocation admitted for this request",
+   "tests": [
+    "tests/request_link.py"
+   ]
+  },
+  "broker.py:_renameat2": {
+   "verdict": "CONTINUATION",
+   "effects": {
+    "renameat2": 1
+   },
+   "authority": "request path through _cas_replace, _cas_delete and _rename_protocol (CLOSED); recovery rolls forward only on a broker-signed attestation naming this request and its destination, otherwise rolls back to the state before the request",
+   "tests": [
+    "tests/rename_tool.py",
+    "tests/rename_crash.py",
+    "tests/rename_recovery_edges.py",
+    "tests/rename_recovery_window.py",
+    "tests/recovery_forgery.py"
+   ]
+  },
+  "broker.py:_set_att": {
+   "verdict": "CONTINUATION",
+   "effects": {
+    "os.removexattr": 1,
+    "os.setxattr": 1
+   },
+   "authority": "attests an admitted effect on the request path; recovery restores the recorded source attestation only onto content matching the recorded digest (rests on the log's integrity); reattest_legacy re-signs only v1 attestations that verify, for the same request, target and digest",
+   "tests": [
+    "tests/rename_crash.py",
+    "tests/attest_stage4.py",
+    "tests/rename_laundering.py",
+    "tests/recovery_forgery.py"
+   ]
+  },
+  "broker.py:Broker._persist_intents": {
+   "verdict": "CONTINUATION",
+   "effects": {
+    "open('w')": 2,
+    "os.replace": 2
+   },
+   "authority": "the intents file holds only intents the principal wrote: the broker loads them, removes reserved, spent or revoked ones, and returns a reserved intent whose effect is proven absent; it never adds one",
+   "tests": [
+    "tests/three_state.py",
+    "tests/intents_resource.py",
+    "tests/intent_attacks.py"
+   ]
+  },
+  "broker.py:AuditLog.append": {
+   "verdict": "EXCEPTION",
+   "effects": {
+    "open('a')": 1
+   },
+   "authority": "the audit log: evidence, not a governed effect",
+   "tests": []
+  },
+  "checkpoint.py:publish": {
+   "verdict": "EXCEPTION",
+   "effects": {
+    "os.makedirs": 1,
+    "open('a')": 1
+   },
+   "authority": "the checkpoint sink: evidence, not a governed effect",
+   "tests": []
+  },
+  "attest.py:KeyRing.save": {
+   "verdict": "EXCEPTION",
+   "effects": {
+    "os.open(write)": 1,
+    "os.replace": 2,
+    "open('w')": 1
+   },
+   "authority": "the broker's key ring",
+   "tests": []
+  },
+  "broker.py:_load_or_create_keys": {
+   "verdict": "EXCEPTION",
+   "effects": {
+    "os.replace": 1
+   },
+   "authority": "the broker's signing key",
+   "tests": []
+  },
+  "broker.py:retire_legacy_secret": {
+   "verdict": "EXCEPTION",
+   "effects": {
+    "os.remove": 1
+   },
+   "authority": "removes the retired legacy secret",
+   "tests": []
+  },
+  "broker.py:_claim": {
+   "verdict": "EXCEPTION",
+   "effects": {
+    "os.open(write)": 1
+   },
+   "authority": "the audit log's lock file",
+   "tests": []
+  },
+  "broker.py:serve": {
+   "verdict": "EXCEPTION",
+   "effects": {
+    "os.remove": 1,
+    "os.chmod": 1
+   },
+   "authority": "the broker's own socket",
+   "tests": []
+  },
+  "kernel.py:KernelClient._start": {
+   "verdict": "EXCEPTION",
+   "effects": {
+    "subprocess.Popen": 1
+   },
+   "authority": "starts the kernel process; touches no workspace file",
+   "tests": []
+  },
+  "install.py:install_kernel": {
+   "verdict": "EXCEPTION",
+   "effects": {
+    "os.chmod": 1,
+    "os.replace": 1,
+    "os.remove": 1
+   },
+   "authority": "installs the pinned kernel binary in the user's cache",
+   "tests": []
+  },
+  "install.py:_download": {
+   "verdict": "EXCEPTION",
+   "effects": {
+    "open('wb')": 1
+   },
+   "authority": "downloads the kernel binary before its checksum is verified",
+   "tests": []
+  },
+  "guard.py:DARMGuard._log_event": {
+   "verdict": "EXCEPTION",
+   "effects": {
+    "open('a')": 1
+   },
+   "authority": "the legacy v0.1 guard's own log",
+   "tests": []
+  },
+  "verify.py:main": {
+   "verdict": "EXCEPTION",
+   "effects": {
+    "open('w')": 1
+   },
+   "authority": "darm-verify's report file",
+   "tests": []
+  }
+ }
+}

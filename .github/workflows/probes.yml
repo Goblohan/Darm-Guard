@@ -238,3 +238,12 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/canonical_agreement.py
+
+      - name: Every effect site is classified (closed, continuation, exception); none is open
+        run: |
+          python scripts/check_effect_sites.py
+
+      - name: Recovery never rolls forward a rename K6 did not admit (a forged prepared record is rolled back)
+        run: |
+          ./tests/setup_demo.sh
+          python tests/recovery_forgery.py

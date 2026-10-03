@@ -14,6 +14,7 @@ Every guarantee below rests on stated assumptions, and every assumption has a st
 |---|---|---|
 | No governed effect without kernel admission | K4, K3; claim: kernel-admission | Binary certified on 1,000 answers |
 | The broker reads a kernel admission only when the proved kernel admitted the request the kernel parsed; an error or malformed reply never reads as an admission | K5; claim: kernel-wire-contract | tests/kernel_wire_contract.py: every reply class decoded as pyAdmits; the real kernel's replies are exactly decisionJson4's rendering |
+| No governed effect happens without a K6 admission for its request: every effect site is closed, a continuation of an admitted transition, or outside the workspace | K6; claim: effect-surface | scripts/check_effect_sites.py over the full inventory; tests/recovery_forgery.py: a forged prepared rename is rolled back |
 | The executed invocation is the decided one | B3; claim: invocation-correspondence | Broker certified on 2,000 facts |
 | The agent cannot vouch for its own values; payload cannot buy authority | B1, B2a, K4; claim: provenance-independent | Certified; attack tests |
 | No action without a principal-held, single-use intent | E24; claim: intent-required | Certified on 300 sequences |
