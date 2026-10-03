@@ -252,3 +252,6 @@ jobs:
         run: |
           ./tests/setup_demo.sh
           python tests/kernel_reply_binding.py
+
+      - name: The effect-surface gate rejects unreviewed changes (seven attacks rejected, two controls pass)
+        run: python tests/gate_attacks.py

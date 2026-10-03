@@ -18,7 +18,13 @@
     "tests/canonical_agreement.py",
     "tests/request_link.py",
     "tests/kernel_wire_contract.py"
-   ]
+   ],
+   "fingerprint": "42d49016a70d4dc1",
+   "reach": {
+    "broker.py:Broker._handle": "63a307418b464fa1",
+    "broker.py:Broker.handle": "b1a0070798af9c6a",
+    "broker.py:_Handler.handle": "dbfa67571f6fd136"
+   }
   },
   "broker.py:_cas_replace": {
    "verdict": "CLOSED",
@@ -30,7 +36,14 @@
    "tests": [
     "tests/canonical_agreement.py",
     "tests/request_link.py"
-   ]
+   ],
+   "fingerprint": "96a01d5d607fcec1",
+   "reach": {
+    "broker.py:Broker._handle": "63a307418b464fa1",
+    "broker.py:Broker.handle": "b1a0070798af9c6a",
+    "broker.py:_Handler.handle": "dbfa67571f6fd136",
+    "broker.py:_execute": "42d49016a70d4dc1"
+   }
   },
   "broker.py:_cas_delete": {
    "verdict": "CLOSED",
@@ -40,7 +53,14 @@
    "authority": "reached only through _execute; the K6 invocation admitted for this request",
    "tests": [
     "tests/request_link.py"
-   ]
+   ],
+   "fingerprint": "e95bbd6f614165d1",
+   "reach": {
+    "broker.py:Broker._handle": "63a307418b464fa1",
+    "broker.py:Broker.handle": "b1a0070798af9c6a",
+    "broker.py:_Handler.handle": "dbfa67571f6fd136",
+    "broker.py:_execute": "42d49016a70d4dc1"
+   }
   },
   "broker.py:_renameat2": {
    "verdict": "CONTINUATION",
@@ -54,7 +74,25 @@
     "tests/rename_recovery_edges.py",
     "tests/rename_recovery_window.py",
     "tests/recovery_forgery.py"
-   ]
+   ],
+   "fingerprint": "0956889061dbdd97",
+   "reach": {
+    "broker.py:<module>": "5e813ed06c7b3769",
+    "broker.py:Broker._handle": "63a307418b464fa1",
+    "broker.py:Broker._recover_rename": "45bc686b8e85750a",
+    "broker.py:Broker.handle": "b1a0070798af9c6a",
+    "broker.py:Broker.reconcile_pending": "56a6bb5e63ea7f91",
+    "broker.py:_Handler.handle": "dbfa67571f6fd136",
+    "broker.py:_cas_delete": "e95bbd6f614165d1",
+    "broker.py:_cas_replace": "96a01d5d607fcec1",
+    "broker.py:_execute": "42d49016a70d4dc1",
+    "broker.py:_rename_protocol": "672fb4b9314488e5",
+    "broker.py:main": "743a60e114da5335",
+    "broker.py:serve": "b0597a9747c0d84c",
+    "coverage.py:<module>": "3dd519750fd379e5",
+    "install.py:<module>": "a04a6546e6fb47f0",
+    "verify.py:<module>": "4c4846d0fe72744c"
+   }
   },
   "broker.py:_set_att": {
    "verdict": "CONTINUATION",
@@ -68,7 +106,24 @@
     "tests/attest_stage4.py",
     "tests/rename_laundering.py",
     "tests/recovery_forgery.py"
-   ]
+   ],
+   "fingerprint": "5362170c1ce85e46",
+   "reach": {
+    "broker.py:<module>": "5e813ed06c7b3769",
+    "broker.py:Broker._handle": "63a307418b464fa1",
+    "broker.py:Broker._recover_rename": "45bc686b8e85750a",
+    "broker.py:Broker.handle": "b1a0070798af9c6a",
+    "broker.py:Broker.reattest_legacy": "ee727ad76c88ef28",
+    "broker.py:Broker.reconcile_pending": "56a6bb5e63ea7f91",
+    "broker.py:_Handler.handle": "dbfa67571f6fd136",
+    "broker.py:_execute": "42d49016a70d4dc1",
+    "broker.py:_rename_protocol": "672fb4b9314488e5",
+    "broker.py:main": "743a60e114da5335",
+    "broker.py:serve": "b0597a9747c0d84c",
+    "coverage.py:<module>": "3dd519750fd379e5",
+    "install.py:<module>": "a04a6546e6fb47f0",
+    "verify.py:<module>": "4c4846d0fe72744c"
+   }
   },
   "broker.py:Broker._persist_intents": {
    "verdict": "CONTINUATION",
@@ -81,7 +136,42 @@
     "tests/three_state.py",
     "tests/intents_resource.py",
     "tests/intent_attacks.py"
-   ]
+   ],
+   "fingerprint": "38b35a4a840303b2",
+   "reach": {
+    "attest.py:KeyRing.verify": "4aaee38adee6f67e",
+    "attest.py:KeyRing.verify_checkpoint": "446cccf3812dfd2e",
+    "broker.py:<module>": "5e813ed06c7b3769",
+    "broker.py:Broker._handle": "63a307418b464fa1",
+    "broker.py:Broker._recover_rename": "45bc686b8e85750a",
+    "broker.py:Broker._refresh_intents": "1b6b9e7aa7e82f0e",
+    "broker.py:Broker._settle_and_record": "4446ac4d463b8d86",
+    "broker.py:Broker.decide": "768925633285c9e1",
+    "broker.py:Broker.handle": "b1a0070798af9c6a",
+    "broker.py:Broker.reattest_legacy": "ee727ad76c88ef28",
+    "broker.py:Broker.reconcile_pending": "56a6bb5e63ea7f91",
+    "broker.py:Broker.settle_reserved": "15818d8a4dc49072",
+    "broker.py:_Handler.handle": "dbfa67571f6fd136",
+    "broker.py:_broker_verdict": "16156966b21e96ab",
+    "broker.py:_check_attestation": "b1952a598ca92ab2",
+    "broker.py:_read_verdict": "322ad7f25f490b77",
+    "broker.py:main": "743a60e114da5335",
+    "broker.py:retire_legacy_secret": "21db5184235984ac",
+    "broker.py:serve": "b0597a9747c0d84c",
+    "broker.py:verify_world": "46c47eac5e4cde3b",
+    "checkpoint.py:check_log": "1154df74b216b930",
+    "coverage.py:<module>": "3dd519750fd379e5",
+    "coverage.py:coverage": "c698d2ae50218e0a",
+    "coverage.py:kernel_adapter": "9490205f772cb53d",
+    "coverage.py:main": "495d62cd6337c047",
+    "guard.py:DARMGuard.check": "ed029f02a51b9bbd",
+    "install.py:<module>": "a04a6546e6fb47f0",
+    "kernel.py:KernelGuard.check": "5ec765995fa8e0b0",
+    "verify.py:<module>": "4c4846d0fe72744c",
+    "verify.py:darmguard_v01": "3d4edf95532930b0",
+    "verify.py:main": "ea576da10a1356b9",
+    "verify.py:verify": "e49b64edcdf10e1a"
+   }
   },
   "broker.py:AuditLog.append": {
    "verdict": "EXCEPTION",
@@ -89,7 +179,8 @@
     "open('a')": 1
    },
    "authority": "the audit log: evidence, not a governed effect",
-   "tests": []
+   "tests": [],
+   "fingerprint": "f978cc13a45fcd70"
   },
   "checkpoint.py:publish": {
    "verdict": "EXCEPTION",
@@ -98,7 +189,8 @@
     "open('a')": 1
    },
    "authority": "the checkpoint sink: evidence, not a governed effect",
-   "tests": []
+   "tests": [],
+   "fingerprint": "1595a75b258e4e7f"
   },
   "attest.py:KeyRing.save": {
    "verdict": "EXCEPTION",
@@ -108,7 +200,8 @@
     "open('w')": 1
    },
    "authority": "the broker's key ring",
-   "tests": []
+   "tests": [],
+   "fingerprint": "4f763159276f8a3d"
   },
   "broker.py:_load_or_create_keys": {
    "verdict": "EXCEPTION",
@@ -116,7 +209,8 @@
     "os.replace": 1
    },
    "authority": "the broker's signing key",
-   "tests": []
+   "tests": [],
+   "fingerprint": "c98ae226f4c9700c"
   },
   "broker.py:retire_legacy_secret": {
    "verdict": "EXCEPTION",
@@ -124,7 +218,8 @@
     "os.remove": 1
    },
    "authority": "removes the retired legacy secret",
-   "tests": []
+   "tests": [],
+   "fingerprint": "21db5184235984ac"
   },
   "broker.py:_claim": {
    "verdict": "EXCEPTION",
@@ -132,7 +227,8 @@
     "os.open(write)": 1
    },
    "authority": "the audit log's lock file",
-   "tests": []
+   "tests": [],
+   "fingerprint": "e790c3929a416528"
   },
   "broker.py:serve": {
    "verdict": "EXCEPTION",
@@ -141,7 +237,8 @@
     "os.chmod": 1
    },
    "authority": "the broker's own socket",
-   "tests": []
+   "tests": [],
+   "fingerprint": "b0597a9747c0d84c"
   },
   "kernel.py:KernelClient._start": {
    "verdict": "EXCEPTION",
@@ -149,7 +246,8 @@
     "subprocess.Popen": 1
    },
    "authority": "starts the kernel process; touches no workspace file",
-   "tests": []
+   "tests": [],
+   "fingerprint": "8ba5f9cdac762858"
   },
   "install.py:install_kernel": {
    "verdict": "EXCEPTION",
@@ -159,7 +257,8 @@
     "os.remove": 1
    },
    "authority": "installs the pinned kernel binary in the user's cache",
-   "tests": []
+   "tests": [],
+   "fingerprint": "77918ef00900aaeb"
   },
   "install.py:_download": {
    "verdict": "EXCEPTION",
@@ -167,7 +266,8 @@
     "open('wb')": 1
    },
    "authority": "downloads the kernel binary before its checksum is verified",
-   "tests": []
+   "tests": [],
+   "fingerprint": "718473d7418385a4"
   },
   "guard.py:DARMGuard._log_event": {
    "verdict": "EXCEPTION",
@@ -175,7 +275,8 @@
     "open('a')": 1
    },
    "authority": "the legacy v0.1 guard's own log",
-   "tests": []
+   "tests": [],
+   "fingerprint": "942c7b99676297db"
   },
   "verify.py:main": {
    "verdict": "EXCEPTION",
@@ -183,7 +284,8 @@
     "open('w')": 1
    },
    "authority": "darm-verify's report file",
-   "tests": []
+   "tests": [],
+   "fingerprint": "ea576da10a1356b9"
   }
  }
 }

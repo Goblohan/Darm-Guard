@@ -849,13 +849,14 @@
    "tests": [
     "tests/canonical_agreement.py",
     "tests/recovery_forgery.py",
-    "tests/request_link.py"
+    "tests/request_link.py",
+    "tests/gate_attacks.py"
    ],
    "implementation": [
     "darm_guard/broker.py:_execute",
     "darm_guard/broker.py:_recover_rename"
    ],
-   "correspondence": "An exhaustive inventory of effect primitives, walked back to their entry points, classified in assurance/effect_sites.json and checked by scripts/check_effect_sites.py on every build.",
+   "correspondence": "An inventory of effect primitives, resolved through import aliases and including references and dynamic access, walked back to every function that can reach each one. Each effect function's verdict in assurance/effect_sites.json is bound to a fingerprint of its tokens, and each closed or continuation verdict to the fingerprints of every function on a route into it; scripts/check_effect_sites.py fails on any new, changed or unclassified site or route, and --accept records review without classifying. gate_attacks shows the gate rejects seven unreviewed changes and passes two benign ones.",
    "counterexample": "A recovery that rolled forward on the log alone would perform a forged rename; recovery_forgery shows it rolls back.",
    "limitation": "An audit, maintained by a gate, not a proof: it rests on the signing key's secrecy, on only the broker writing the log's unprotected tail, and on effects being reached through the primitives the inventory detects. Kernel replies are bound to their request by a nonce (K7); this rests on the broker never reusing a nonce.",
    "bridge": "tested"
