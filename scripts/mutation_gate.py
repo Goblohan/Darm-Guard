@@ -11,6 +11,9 @@ import os, shutil, subprocess, sys, tempfile
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 BROKER = "darm_guard/broker.py"
+TARGETS = {   # mutations whose check lives outside the broker; every other mutation targets BROKER
+    "kernel reply not bound to its request": "darm_guard/kernel.py",
+}
 
 LIFT = '''
 
@@ -86,7 +89,7 @@ for name in names:
     work = tempfile.mkdtemp(prefix="darm-mut-")
     clone = os.path.join(work, "repo")
     subprocess.run(["git", "clone", "-q", REPO, clone], check=True)
-    path = os.path.join(clone, BROKER)
+    path = os.path.join(clone, TARGETS.get(name, BROKER))
     mutated = mutate(open(path).read(), MUTATIONS[name])   # read BEFORE opening for write:
     open(path, "w").write(mutated)                        # "w" truncates the file immediately
     subprocess.run(["git", "-C", clone, "-c", "user.name=mutation", "-c", "user.email=m@local",
