@@ -62,6 +62,7 @@ MUTATIONS = {
     "destination unchecked before the decision": [('PATH_KEYS = ("path", "destination")', 'PATH_KEYS = ("path",)')],
     "SIGTERM acted on before the try": [('if state["armed"]:', 'if True:')],
     "canonical cross-check off": [('        if d.invocation != inv:', '        if False:')],
+    "recovery rolls forward without a signed attestation": [('reattested = bool(a and a.get("target") == dst and a.get("rid") == e.get("request_id"))', 'reattested = True')],
     "premises ignored": [('next((i for i in fitting if _premise_problem(self.cfg, i) is None), None)',
                           'next((i for i in fitting), None)')],
 }
