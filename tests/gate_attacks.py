@@ -1,5 +1,5 @@
 """The effect-surface gate rejects unreviewed changes to the effect surface,
-not only new primitives: seven attacks on a copy of the repository must each
+not only new primitives: eleven attacks on a copy of the repository must each
 fail the gate, and two controls (no change; a comment inside _execute) must
 pass it, so the gate is neither blind nor indiscriminate. Predictions first."""
 import os, shutil, subprocess, sys, tempfile
@@ -34,6 +34,12 @@ attacks = [
  ("an effect function bound to a name", lambda t: t + "\n\ndef _wipe3(path):\n    f = os.unlink\n    f(path)\n"),
  ("dynamic access to os", lambda t: t + "\n\ndef _wipe4(path):\n    getattr(os, 'unl' + 'ink')(path)\n"),
  ("_handle no longer refuses before executing", once('            if resp["decision"] != "admit":', '            if False:')),
+ ("a helper below the decision changes (normal form accepts anything)",
+  once("def path_in_normal_form(value: str) -> bool:\n", "def path_in_normal_form(value: str) -> bool:\n    return True\n")),
+ ("a constant a verdict relies on changes (PATH_KEYS loses destination)",
+  once('PATH_KEYS = ("path", "destination")', 'PATH_KEYS = ("path",)')),
+ ("a route through a thread target", lambda t: t + "\n\nimport threading\ndef _sneak2(cfg, inv):\n    threading.Thread(target=_execute, args=(cfg, inv)).start()\n"),
+ ("dynamic evaluation", lambda t: t + "\n\ndef _ev(s):\n    eval(s)\n"),
 ]
 results = []
 def check(label, got, predicted):

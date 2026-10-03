@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""The effect-surface gate (v2). Fails unless: the effect sites found now equal
+"""The effect-surface gate (v3). Fails unless: the effect sites found now equal
 the manifest's; every verdict is CLOSED, CONTINUATION or EXCEPTION (OPEN
 fails); every CLOSED or CONTINUATION entry cites tests that exist; every effect
 function still has the fingerprint it was reviewed with; and every closed or
-continuation function is reached from exactly the reviewed functions, each
-unchanged. After reviewing a change, --accept records the new fingerprints and
+continuation verdict's cone (routes into it, everything called along them, and
+the module code involved) holds exactly the reviewed functions, each unchanged. After reviewing a change, --accept records the new fingerprints and
 routes; it refuses while any site is new or unclassified or any verdict is
 invalid, which must be written into the manifest by hand."""
 import collections, json, os, subprocess, sys
@@ -38,14 +38,14 @@ for fn, e in man["functions"].items():
     if e.get("fingerprint") != cur["fingerprint"]:
         review.append(f"{fn}: its code changed since its verdict was reviewed")
     if v in GUARDED:
-        mr, cr = e.get("reach", {}), cur["reach"]
+        mr, cr = e.get("cone", {}), cur["cone"]
         for a in sorted(set(mr) | set(cr)):
             if a not in mr:
-                review.append(f"{fn}: a new route into it, through {a}")
+                review.append(f"{fn}: {a} is new in its cone")
             elif a not in cr:
-                review.append(f"{fn}: a reviewed route through {a} is gone")
+                review.append(f"{fn}: {a} has left its cone")
             elif mr[a] != cr[a]:
-                review.append(f"{fn}: {a}, on a route into it, changed")
+                review.append(f"{fn}: {a}, in its cone, changed")
 for k in sorted(set(found) | set(expected)):
     if found[k] != expected[k]:
         bad.append(f"{k[0]} {k[1]}: found {found[k]}, manifest says {expected[k]}")
@@ -58,10 +58,11 @@ if ACCEPT:
     for fn, e in man["functions"].items():
         cur = inv["functions"][fn]
         e["fingerprint"] = cur["fingerprint"]
+        e.pop("reach", None)
         if e.get("verdict") in GUARDED:
-            e["reach"] = cur["reach"]
+            e["cone"] = cur["cone"]
         else:
-            e.pop("reach", None)
+            e.pop("cone", None)
     json.dump(man, open(MP, "w"), indent=1)
     print(f"accepted: {len(man['functions'])} functions, {len(review)} reviewed changes recorded")
     sys.exit(0)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Effect-site inventory for darm_guard (v2).
+"""Effect-site inventory for darm_guard (v3).
 
 Every call that can change the world, resolved through import aliases
 (import os as x; from os import unlink as y), and every reference to an effect
@@ -8,7 +8,10 @@ through getattr on a module): those are sites too, and must be classified.
 For each function, a fingerprint of its tokens (formatting and comments
 ignored, stable across Python versions); for each effect function, every
 function from which it can be reached, each with its fingerprint, so a verdict
-is bound to the code it was reviewed against.
+is bound to the code it was reviewed against. v3: a verdict's cone runs in both directions: every function
+on a route into the effect function (calls and references, such as a thread
+target), every function those call, transitively, and the module-level code of
+every module involved; eval, exec, compile, __import__ and importlib are sites.
 Usage: effect_inventory.py [package_dir] [--json]"""
 import ast, collections, hashlib, io, json, os, sys, textwrap, tokenize
 
@@ -24,6 +27,7 @@ SHUTIL_EFFECTS = {"move", "rmtree", "copy", "copy2", "copyfile", "copytree"}
 SUBPROCESS_EFFECTS = {"run", "Popen", "call", "check_call", "check_output", "getoutput", "getstatusoutput"}
 WRITE_FLAGS = ("O_WRONLY", "O_RDWR", "O_CREAT", "O_TRUNC", "O_APPEND")
 MODULES = {"os", "shutil", "subprocess"}
+DYNAMIC = {"eval", "exec", "compile", "__import__"}
 SKIP = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT,
         tokenize.ENCODING, tokenize.ENDMARKER}
 
@@ -98,17 +102,25 @@ class Walker(ast.NodeVisitor):
         e = self.effect_of(n, base, name)
         if e:
             self.effects.append((n.lineno, e, fn))
+        if base == "" and name in DYNAMIC:
+            self.effects.append((n.lineno, f"dynamic:{name}", fn))
+        if base == "importlib" or (base, name) == ("importlib", "import_module"):
+            self.effects.append((n.lineno, f"dynamic:importlib.{name}", fn))
         if base == "" and name == "getattr" and n.args and self.modname(n.args[0]) in MODULES:
             self.effects.append((n.lineno, f"dynamic:getattr({self.modname(n.args[0])})", fn))
         n.func._darm_called = True
         self.generic_visit(n)
     def visit_Attribute(self, n):
+        if not getattr(n, "_darm_called", False) and isinstance(n.ctx, ast.Load):
+            self.calls[self.qual()].add(n.attr)          # a reference is a route (thread targets, callbacks)
         if not getattr(n, "_darm_called", False):
             b = self.modname(n.value)
             if b and is_effect(b, n.attr):
                 self.effects.append((n.lineno, f"reference:{b}.{n.attr}", self.qual()))
         self.generic_visit(n)
     def visit_Name(self, n):
+        if not getattr(n, "_darm_called", False) and isinstance(n.ctx, ast.Load):
+            self.calls[self.qual()].add(n.id)            # a reference is a route (thread targets, callbacks)
         if not getattr(n, "_darm_called", False) and isinstance(n.ctx, ast.Load) and n.id in self.direct:
             m, a = self.direct[n.id]
             if is_effect(m, a):
@@ -124,9 +136,9 @@ for fname in sorted(os.listdir(PKG)):
     for a in ast.walk(tree):
         if isinstance(a, ast.Import):
             for al in a.names:
-                if al.name in MODULES:
+                if al.name in MODULES or al.name == "importlib":
                     aliases[al.asname or al.name] = al.name
-        elif isinstance(a, ast.ImportFrom) and a.module in MODULES:
+        elif isinstance(a, ast.ImportFrom) and a.module in MODULES | {"importlib"}:
             for al in a.names:
                 direct[al.asname or al.name] = (a.module, al.name)
         elif isinstance(a, ast.Assign) and isinstance(a.value, ast.Call):
@@ -155,22 +167,37 @@ for f, names in allcalls.items():
         if d != f and short(d) in names:
             callers[d].add(f)
 
-def reach(fn):
-    seen, todo = set(), [fn]
+callees = collections.defaultdict(set)
+for f, cs in callers.items():
+    for c in cs:
+        callees[c].add(f)
+
+def closure(start, edges):
+    seen, todo = set(start), list(start)
     while todo:
-        for c in callers.get(todo.pop(), ()):
-            if c not in seen and c != fn:
+        for c in edges.get(todo.pop(), ()):
+            if c not in seen:
                 seen.add(c); todo.append(c)
-    return sorted(seen)
+    return seen
+
+def cone(fn):
+    """Everything fn's verdict depends on: routes into it, everything called along
+    them (and by fn), and the module-level code of every module involved."""
+    up = closure({fn}, callers)
+    down = closure(up, callees)
+    members = up | down
+    members |= {m.split(":", 1)[0] + ":<module>" for m in members}
+    members.discard(fn)
+    return sorted(members)
 
 effect_fns = sorted({r[3] for r in rows})
 if JSON:
     print(json.dumps({
         "sites": [{"module": m, "function": fn.split(":", 1)[1], "effect": e} for m, _l, e, fn in sorted(rows)],
         "functions": {fn: {"fingerprint": fps.get(fn, "?"),
-                           "reach": {a: fps.get(a, "?") for a in reach(fn)}} for fn in effect_fns}}))
+                           "cone": {a: fps.get(a, "?") for a in cone(fn)}} for fn in effect_fns}}))
     sys.exit(0)
 print(f"{'site':28} {'effect':26} {'in function':38} reached from")
 for mod, line, eff, fn in sorted(rows):
-    print(f"{mod}:{line:<20} {eff:26} {fn.split(':', 1)[1]:38} {len(reach(fn))} functions")
+    print(f"{mod}:{line:<20} {eff:26} {fn.split(':', 1)[1]:38} cone of {len(cone(fn))}")
 print(f"\n{len(rows)} effect sites in {len(effect_fns)} functions")
