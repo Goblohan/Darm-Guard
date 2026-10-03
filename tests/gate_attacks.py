@@ -29,8 +29,8 @@ EXEC_ARGS = '    args = {a["key"]: a["value"] for a in inv["args"]}\n    opened 
 attacks = [
  ("a new route into _execute", lambda t: t + "\n\ndef _sneak(cfg, inv):\n    return _execute(cfg, inv)\n"),
  ("_execute's arguments no longer from inv", once(EXEC_ARGS, EXEC_ARGS.replace('inv["args"]', 'inv.get("raw_args", inv["args"])'))),
- ("an aliased import", lambda t: t + "\n\nimport os as _o\ndef _wipe(path):\n    _o.unlink(path)\n"),
- ("a direct import", lambda t: t + "\n\nfrom os import unlink as _u\ndef _wipe2(path):\n    _u(path)\n"),
+ ("an aliased import", lambda t: t + "\n\ndef _wipe(path):\n    import os as _o\n    _o.unlink(path)\n"),
+ ("a direct import", lambda t: t + "\n\ndef _wipe2(path):\n    from os import unlink as _u\n    _u(path)\n"),
  ("an effect function bound to a name", lambda t: t + "\n\ndef _wipe3(path):\n    f = os.unlink\n    f(path)\n"),
  ("dynamic access to os", lambda t: t + "\n\ndef _wipe4(path):\n    getattr(os, 'unl' + 'ink')(path)\n"),
  ("_handle no longer refuses before executing", once('            if resp["decision"] != "admit":', '            if False:')),
@@ -38,7 +38,7 @@ attacks = [
   once("def path_in_normal_form(value: str) -> bool:\n", "def path_in_normal_form(value: str) -> bool:\n    return True\n")),
  ("a constant a verdict relies on changes (PATH_KEYS loses destination)",
   once('PATH_KEYS = ("path", "destination")', 'PATH_KEYS = ("path",)')),
- ("a route through a thread target", lambda t: t + "\n\nimport threading\ndef _sneak2(cfg, inv):\n    threading.Thread(target=_execute, args=(cfg, inv)).start()\n"),
+ ("a route through a thread target", lambda t: t + "\n\ndef _sneak2(cfg, inv):\n    import threading\n    threading.Thread(target=_execute, args=(cfg, inv)).start()\n"),
  ("dynamic evaluation", lambda t: t + "\n\ndef _ev(s):\n    eval(s)\n"),
 ]
 results = []
