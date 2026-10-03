@@ -1,7 +1,7 @@
 {
  "darm_monitor": {
   "repo": "https://github.com/Goblohan/darm-monitor.git",
-  "commit": "40963aa"
+  "commit": "278df7d"
  },
  "claims": [
   {
@@ -805,10 +805,18 @@
       "admit_only_by_kernel",
       "kernel_admit_reaches_python"
      ]
+    },
+    {
+     "module": "K7DecisionServer",
+     "theorems": [
+      "reply_names_its_request",
+      "admit7_only_by_kernel"
+     ]
     }
    ],
    "tests": [
-    "tests/kernel_wire_contract.py"
+    "tests/kernel_wire_contract.py",
+    "tests/kernel_reply_binding.py"
    ],
    "implementation": [
     "darm_guard/kernel.py:KernelClient"
@@ -822,7 +830,8 @@
     "Lean's Json.parse and the derived FromJson instances",
     "the kernel server's I/O loop",
     "Python's json.loads",
-    "the broker's decoder matching pyAdmits (checked exhaustively, not proved)"
+    "the broker's decoder matching pyAdmits (checked exhaustively, not proved)",
+    "the broker never reuses a nonce (a fresh random one per request)"
    ]
   },
   {
@@ -848,7 +857,7 @@
    ],
    "correspondence": "An exhaustive inventory of effect primitives, walked back to their entry points, classified in assurance/effect_sites.json and checked by scripts/check_effect_sites.py on every build.",
    "counterexample": "A recovery that rolled forward on the log alone would perform a forged rename; recovery_forgery shows it rolls back.",
-   "limitation": "An audit, maintained by a gate, not a proof: it rests on the signing key's secrecy, on only the broker writing the log's unprotected tail, and on effects being reached through the primitives the inventory detects. Kernel replies carry no request nonce; replay of a reply for the same proposal is bounded, not closed.",
+   "limitation": "An audit, maintained by a gate, not a proof: it rests on the signing key's secrecy, on only the broker writing the log's unprotected tail, and on effects being reached through the primitives the inventory detects. Kernel replies are bound to their request by a nonce (K7); this rests on the broker never reusing a nonce.",
    "bridge": "tested"
   }
  ]
