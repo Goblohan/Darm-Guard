@@ -77,7 +77,10 @@ e = json.loads(lines[1]); e["decision"] = "reject"
 lines[1] = json.dumps(e, sort_keys=True)
 open(a2, "w").write("\n".join(lines) + "\n")
 p = start(a2)
-time.sleep(0.5)
+try:                      # wait for the refusal itself, not a fixed 0.5 s, which raced on slow machines
+    p.wait(timeout=20)
+except subprocess.TimeoutExpired:
+    pass                  # still running after 20 s: it did not refuse, and the check below fails
 check("tampered audit: broker refuses to start", p.poll() is not None, f"exit={p.poll()}")
 if p.poll() is None:
     stop(p)
