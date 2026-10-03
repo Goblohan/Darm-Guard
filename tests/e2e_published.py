@@ -207,6 +207,20 @@ for f in (os.path.join(cfg.workspace, "reports", "e2e_k6.md"), ka, ka + ".key", 
     if os.path.exists(f):
         os.remove(f)
 
+import stat as _st, tempfile as _tf
+_sd = _tf.mkdtemp(prefix="e2e-stale-")
+_sp = os.path.join(_sd, "stale_kernel")
+open(_sp, "w").write("#!/usr/bin/env python3\nimport json, sys\nfor _l in sys.stdin:\n"
+                     "    print(json.dumps({'decision': 'admit', 'nonce': 'stale'}), flush=True)\n")
+os.chmod(_sp, os.stat(_sp).st_mode | _st.S_IEXEC)
+_sc = _KC(path=_sp, timeout=2.0)
+_stale = _sc.decide({"probe": True})
+_sc.close()
+_rk = _KC().decide({"policy": {"tools": []}, "credential": {"tools": [], "expired": False},
+                    "invocation": {"tool": "t", "args": []}})
+check("a kernel reply not carrying this request's nonce is refused; the real kernel echoes it (K7)",
+      (not bool(_stale)) and "nonce" in json.loads(_rk.raw), (_stale.error, _rk.raw))
+
 from darm_guard.coverage import coverage, kernel_adapter
 rows = coverage(kernel_adapter)
 check("the coverage map: every case self-checked, every dimension covered, the untrusted payload admitted",
