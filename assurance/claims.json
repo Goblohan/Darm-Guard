@@ -1,7 +1,7 @@
 {
  "darm_monitor": {
   "repo": "https://github.com/Goblohan/darm-monitor.git",
-  "commit": "278df7d"
+  "commit": "caebc7c"
  },
  "claims": [
   {
@@ -844,6 +844,15 @@
       "admit6_returns_canonical",
       "admit_only_by_kernel6"
      ]
+    },
+    {
+     "module": "E34AssuranceUnderChange",
+     "theorems": [
+      "preserved",
+      "history_preserved",
+      "locality_necessary",
+      "gate_incomplete"
+     ]
     }
    ],
    "tests": [
@@ -856,9 +865,9 @@
     "darm_guard/broker.py:_execute",
     "darm_guard/broker.py:_recover_rename"
    ],
-   "correspondence": "An inventory of effect primitives, resolved through import aliases and including references and dynamic access, walked back to every function that can reach each one. Each effect function's verdict in assurance/effect_sites.json is bound to a fingerprint of its tokens, and each closed or continuation verdict to the fingerprints of every function on a route into it; scripts/check_effect_sites.py fails on any new, changed or unclassified site or route, and --accept records review without classifying. gate_attacks shows the gate rejects seven unreviewed changes and passes two benign ones.",
+   "correspondence": "Every effect site, resolved through imports and including references and dynamic access, is classified in assurance/effect_sites.json. Each verdict is bound to the token fingerprint of its effect function and, for closed and continuation verdicts, of every member of its cone: the routes into it, everything called along them, and the module code involved. scripts/check_effect_sites.py fails on any new, changed or unclassified site or cone member; --accept records review and never classifies. gate_attacks rejects eleven unreviewed changes and accepts two benign ones, and each part of the cone accounts for exactly its own attacks; mutations that weaken the inventory are caught.",
    "counterexample": "A recovery that rolled forward on the log alone would perform a forged rename; recovery_forgery shows it rolls back.",
-   "limitation": "An audit, maintained by a gate, not a proof: it rests on the signing key's secrecy, on only the broker writing the log's unprotected tail, and on effects being reached through the primitives the inventory detects. Kernel replies are bound to their request by a nonce (K7); this rests on the broker never reusing a nonce.",
+   "limitation": "An audit kept true by a gate, not a proof. By darm-monitor E34 the claim holds for every version the build accepts, provided: each --accept follows a correct review; the inventory sees every dependency that static analysis of the package can see (not monkeypatching from outside the package, nor behavior below Python); equal fingerprints mean equal code; and equal code behaves equally in the same environment. That the cones are local is shown by design, by the manifest pinning the analysis's own output, and by attack, not proved. It also rests on the signing key's secrecy, on only the broker writing the log's unprotected tail, and on fresh nonces (K7).",
    "bridge": "tested"
   }
  ]
