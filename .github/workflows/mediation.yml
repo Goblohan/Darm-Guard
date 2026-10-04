@@ -9,6 +9,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+defaults:
+  run:
+    # bash named explicitly runs every step with -eo pipefail, so a piped step
+    # fails when any command in it fails (see darm-monitor 0e14b75)
+    shell: bash
+
 jobs:
   bypass:
     runs-on: ubuntu-latest
