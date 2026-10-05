@@ -4,6 +4,10 @@ Every release of DARM Guard, newest first. Each entry says what changed and, whe
 
 Versions 0.22.0 and earlier were published under the MIT License; later versions under Apache-2.0 (see [NOTICE](NOTICE)).
 
+## 0.23.0
+
+Licensed under Apache-2.0; 0.22.0 and earlier remain MIT. The README is rewritten for evaluators: what DARM Guard is and is not, the broker first, how a request is decided, and each claim with its current evidence and bridge, with figures generated from the repository and checked by CI, and a quick start that CI runs exactly as written. The release history moves to this file; the broker's full design and the earlier APIs move to docs/. SECURITY.md, CITATION.cff and CONTRIBUTING.md (contributions under the DCO) are added, and darm-broker --help describes the current broker and intents. No change to the broker's behaviour or the kernel.
+
 ## 0.22.0
 
 the broker uses kernel-v0.4.0: every kernel request carries a fresh nonce, and a reply not carrying it is refused and the kernel restarted, so a stale or foreign admission can never be read as the answer (darm-monitor K7). The broker's whole effect surface is audited and gated: all 37 effect sites are classified as executing the kernel's invocation for their request, continuing an admitted transition, or outside the workspace, none open, and the build fails on any new, changed or unclassified site. Recovery rolls a rename forward only on a signed attestation for that request; a forged log record is rolled back. A flaky evidence test now waits for the event instead of a fixed delay. Seventeen mutations, all caught.
