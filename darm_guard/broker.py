@@ -1631,12 +1631,12 @@ def serve(cfg: BrokerConfig, socket_path: str, audit_path: str,
 def main() -> None:
     import argparse
     ap = argparse.ArgumentParser(prog="darm-broker",
-                                 description="Run the DARM broker (B1 model).")
+                                 description="Run the DARM broker: it holds the tools, asks the DARM kernel, and executes only what the kernel admits.")
     ap.add_argument("--config", required=True, help="JSON: policy, credential_tools, workspace")
     ap.add_argument("--registry", required=True, help="principal-registered values, one per line")
     ap.add_argument("--socket", default="/tmp/darm-broker.sock")
     ap.add_argument("--audit", default="darm-broker-audit.jsonl")
-    ap.add_argument("--intents", help="principal-held single-use intents, one tool per line (E24)")
+    ap.add_argument("--intents", help="principal-held single-use intents, one per line: a tool, optionally with the exact arguments it authorizes (E24 to E24d)")
     ap.add_argument("--checkpoint-sink",
                     help="directory to publish signed audit checkpoints to; it protects the log "
                          "only if this host cannot rewrite it")

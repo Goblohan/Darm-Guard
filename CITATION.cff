@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use DARM Guard, please cite it as below."
+title: "DARM Guard: runtime authorization for AI agents, decided by a kernel compiled from a machine-checked model"
+type: software
+authors:
+  - family-names: "Olusanya"
+    given-names: "Gbolahan V."
+    email: "gbolahan@perceptra.ai"
+    affiliation: "PerceptraAI Lab"
+repository-code: "https://github.com/Goblohan/Darm-Guard"
+url: "https://pypi.org/project/darm-guard/"
+license: Apache-2.0
+version: "0.22.0"
+keywords: ["AI agents", "authorization", "reference monitor", "formal verification", "Lean 4", "assurance"]
+references:
+  - type: software
+    title: "DARM: Deterministic Algebraic Reference Monitor"
+    repository-code: "https://github.com/Goblohan/darm-monitor"

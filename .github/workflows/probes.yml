@@ -264,3 +264,6 @@ jobs:
 
       - name: The README's evidence table matches the repository
         run: python scripts/readme_figures.py --check
+
+      - name: The README's quick start works exactly as written
+        run: python tests/readme_quickstart.py
