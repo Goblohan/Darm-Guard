@@ -76,3 +76,11 @@ jobs:
           print(hits)
           assert hits, "a bypass of the broker went undetected"
           EOF
+
+  deployment:
+    # The broker and the agent each in a container, as an evaluator or a pilot runs them
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Broker and confined agent in containers; the agent's only route is the broker
+        run: docker compose -f deploy/compose.yaml up --build --abort-on-container-exit --exit-code-from agent

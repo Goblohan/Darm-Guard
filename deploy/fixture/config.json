@@ -1,0 +1,7 @@
+{"policy": {"tools": [
+   {"tool": "read_file",  "rules": [{"key": "path", "allowedValues": [], "allowedPrefixes": ["/workspace/"]}]},
+   {"tool": "list_dir",   "rules": [{"key": "path", "allowedValues": [], "allowedPrefixes": ["/workspace/"]}]},
+   {"tool": "write_file", "rules": [{"key": "path", "allowedValues": [], "allowedPrefixes": ["/workspace/reports/"]},
+                                    {"key": "content", "allowedValues": [], "allowedPrefixes": [""], "payload": true}]}]},
+ "credential_tools": ["read_file", "list_dir", "write_file"],
+ "workspace": "/data/workspace"}

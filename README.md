@@ -76,6 +76,17 @@ Each response reports the kernel's decision separately from the effect (`none`, 
 
 The principal's files (config, registry, intents, revocations) belong where the agent cannot write. File permissions are the deployer's responsibility.
 
+## Try it in Docker, on any OS
+
+The same broker, with the agent in a second container that has no network, a read-only filesystem, no
+workspace and no darm-guard: its only channel is the broker's socket. From a clone of this repository:
+
+    docker compose -f deploy/compose.yaml up --build --abort-on-container-exit --exit-code-from agent
+
+The agent uses the broker, then tries every way around it, and says what happened. This is the evidence for
+complete mediation in this deployment, and CI runs it on every push. The broker image is `linux/amd64`; on an
+Apple Silicon Mac, Docker runs it under emulation.
+
 ## How a request is decided
 
 1. **The proposal is exactly `{tool, args}`.** A proposal with any other field, such as a provenance label, is refused rather than ignored. Paths must be in normal form.
