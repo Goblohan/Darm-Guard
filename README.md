@@ -29,7 +29,7 @@ agent ── {tool, args} ──▶ DARM broker ── proposal + nonce ──�
 <!-- figures:start -->
 | | |
 | --- | --- |
-| Package / kernel | 0.24.0 / kernel-v0.4.0 |
+| Package / kernel | 0.25.0 / kernel-v0.4.0 |
 | Claims, each citing its theorems and tests | 31 |
 | Threat-model guarantees, each backed by a claim | 29 |
 | Bridges from model to code | 1 construction, 1 proved, 29 tested, 0 assumed |
