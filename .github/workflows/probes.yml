@@ -279,3 +279,9 @@ jobs:
 
       - name: A second broker on a held audit log refuses with a plain message, not a traceback
         run: python tests/second_broker_message.py
+
+      - name: Governed GET: URL normal form, addresses, credentials, redirects, limits
+        run: python tests/http_get_unit.py
+
+      - name: Governed GET through the broker: decided, recorded, fetched, credential never returned
+        run: python tests/http_get_broker.py

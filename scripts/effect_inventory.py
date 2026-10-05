@@ -25,8 +25,12 @@ OS_EFFECTS = {"replace", "rename", "unlink", "remove", "setxattr", "removexattr"
               "lchown", "lchmod", "system", "popen", "fork", "kill"}
 SHUTIL_EFFECTS = {"move", "rmtree", "copy", "copy2", "copyfile", "copytree"}
 SUBPROCESS_EFFECTS = {"run", "Popen", "call", "check_call", "check_output", "getoutput", "getstatusoutput"}
+# network: anything that opens a connection or a socket (v4)
+NET_EFFECTS = {"socket": {"socket", "create_connection", "create_server", "socketpair", "fromfd"},
+               "http.client": {"HTTPConnection", "HTTPSConnection"},
+               "urllib.request": {"urlopen", "urlretrieve", "build_opener"}}
 WRITE_FLAGS = ("O_WRONLY", "O_RDWR", "O_CREAT", "O_TRUNC", "O_APPEND")
-MODULES = {"os", "shutil", "subprocess"}
+MODULES = {"os", "shutil", "subprocess"} | set(NET_EFFECTS)
 DYNAMIC = {"eval", "exec", "compile", "__import__"}
 SKIP = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT,
         tokenize.ENCODING, tokenize.ENDMARKER}
@@ -38,7 +42,16 @@ def token_fp(text):
 
 def is_effect(mod, name):
     return (mod == "os" and name in OS_EFFECTS) or (mod == "shutil" and name in SHUTIL_EFFECTS) \
-        or (mod == "subprocess" and name in SUBPROCESS_EFFECTS)
+        or (mod == "subprocess" and name in SUBPROCESS_EFFECTS) or name in NET_EFFECTS.get(mod, ())
+
+def _dotted(e):
+    """a.b.c for a chain of names, else None."""
+    parts = []
+    while isinstance(e, ast.Attribute):
+        parts.append(e.attr); e = e.value
+    if isinstance(e, ast.Name):
+        return ".".join([e.id] + parts[::-1])
+    return None
 
 def _mode(node, pos):
     m = node.args[pos] if len(node.args) > pos else next(
@@ -59,6 +72,9 @@ class Walker(ast.NodeVisitor):
         if isinstance(f, ast.Attribute):
             if isinstance(f.value, ast.Name):
                 return self.aliases.get(f.value.id, f.value.id), f.attr
+            dotted = _dotted(f.value)            # http.client.HTTPConnection, urllib.request.urlopen
+            if dotted:
+                return self.aliases.get(dotted, dotted), f.attr
             return "?", f.attr
         if isinstance(f, ast.Name):
             return self.direct.get(f.id, ("", f.id))
@@ -73,6 +89,8 @@ class Walker(ast.NodeVisitor):
             return f"os.{name}"
         if name == "renameat2":
             return "renameat2"
+        if base in NET_EFFECTS and name in NET_EFFECTS[base]:
+            return f"{base}.{name}"
         if base in self.foreign:
             return f"foreign:{base}.{name}"
         if name in ("write_text", "write_bytes"):
@@ -141,6 +159,10 @@ for fname in sorted(os.listdir(PKG)):
         elif isinstance(a, ast.ImportFrom) and a.module in MODULES | {"importlib"}:
             for al in a.names:
                 direct[al.asname or al.name] = (a.module, al.name)
+        elif isinstance(a, ast.ImportFrom) and a.module and any(f"{a.module}.{al.name}" in MODULES for al in a.names):
+            for al in a.names:                   # from urllib import request; from http import client
+                if f"{a.module}.{al.name}" in MODULES:
+                    aliases[al.asname or al.name] = f"{a.module}.{al.name}"
         elif isinstance(a, ast.Assign) and isinstance(a.value, ast.Call):
             seg = ast.get_source_segment(src, a.value) or ""
             if "CDLL" in seg or "LibraryLoader" in seg or "ctypes.cdll" in seg:

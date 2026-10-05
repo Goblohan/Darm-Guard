@@ -37,8 +37,10 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 
 from .kernel import KernelClient
+from . import http_get
 
 PATH_KEYS = ("path", "destination")
+URL_KEYS = ("url",)          # http_get: refused before the decision unless in URL normal form
 LOGICAL_ROOT = "/workspace/"
 
 
@@ -62,6 +64,7 @@ class BrokerConfig:
     patterns: Tuple[str, ...] = ()         # registry prefixes: values yield 'derived'
     read_requires_attestation: bool = False  # E33: refuse reads not attributed to a broker write
     vouched_manifest: Optional[str] = None   # E33b: principal-held (path, sha256) pairs
+    http: Optional[dict] = None              # http_get: credentials, allowed private hosts, CA file, limits
 
     @staticmethod
     def load(config_path: str, registry_path: str) -> "BrokerConfig":
@@ -75,7 +78,8 @@ class BrokerConfig:
                             datetime.fromisoformat(issued) if issued else None,
                             cfg.get("ttl_seconds"), pats,
                             bool(cfg.get("read_requires_attestation", False)),
-                            _principal_held(cfg.get("vouched_manifest"), cfg["workspace"]))
+                            _principal_held(cfg.get("vouched_manifest"), cfg["workspace"]),
+                            _http_config(cfg.get("http"), cfg["workspace"]))
 
     def expired(self, now: Optional[datetime] = None) -> bool:
         if self.issued_at is None or self.ttl_seconds is None:
@@ -496,6 +500,23 @@ def _principal_held(path, workspace):
     return real
 
 
+def _http_config(h, workspace):
+    """The principal's http_get settings, checked at load. A credential file must be
+    principal-held: one inside the workspace could be read, or replaced, by the agent."""
+    if h is None:
+        return None
+    if not isinstance(h, dict):
+        raise ValueError("http: expected an object")
+    ws = os.path.realpath(workspace)
+    for c in h.get("credentials", []):
+        if not http_get.normal_url(c.get("prefix", "")):
+            raise ValueError(f"http credential prefix {c.get('prefix')!r} is not a URL in normal form")
+        real = os.path.realpath(c["value_file"])
+        if real == ws or real.startswith(ws + os.sep):
+            raise ValueError(f"http credential file {c['value_file']} is inside the workspace; it must be principal-held")
+    return h
+
+
 def _vouched(manifest, path: str, digest: str) -> bool:
     """Does the principal's manifest name exactly this path and digest?
     Read fresh on every read, so the principal's edits apply at once."""
@@ -676,6 +697,8 @@ def _execute(cfg: BrokerConfig, inv: dict, expected=None, attest=None,
              private=None, old_att=None) -> dict:
     """Run an admitted invocation through handles pinned at resolution time."""
     args = {a["key"]: a["value"] for a in inv["args"]}
+    if inv["tool"] == "http_get":
+        return _execute_http(cfg, args)
     opened = _open_parent(cfg, args.get("path", ""))
     if opened is None:
         return {"error": _path_problem(cfg, args.get("path", ""))}
@@ -750,6 +773,26 @@ def _execute(cfg: BrokerConfig, inv: dict, expected=None, attest=None,
         os.close(pfd)
     return {"error": "no implementation for tool"}
 
+def _execute_http(cfg: BrokerConfig, args: dict) -> dict:
+    """http_get, admitted and recorded: GET exactly the decided URL. The principal's
+    credential is attached here and never returned; redirects are reported, not
+    followed; a call sent without a complete answer is unknown, not failed (E31)."""
+    h = cfg.http or {}
+    r = http_get.fetch(args.get("url", ""), credentials=h.get("credentials"),
+                       allow_private=h.get("allow_private"), cafile=h.get("cafile"),
+                       timeout=float(h.get("timeout", http_get.TIMEOUT)),
+                       max_body=int(h.get("max_body", http_get.MAX_BODY)))
+    if r["outcome"] == "succeeded":
+        return {k: r[k] for k in ("status", "content_type", "body", "body_sha256", "truncated",
+                                  "server", "location", "redirect") if k in r}
+    out = {"error": r.get("error", "not fetched")}
+    if r.get("server"):
+        out["server"] = r["server"]
+    if r["outcome"] == "unknown":
+        out["_effect_unknown"] = True
+    return out
+
+
 def _basis(resp: dict) -> list:
     """Phase 4: each response carries the evidence basis of its own claims:
     the darm-monitor theorems and THREAT_MODEL.md assumptions each rests on.
@@ -821,6 +864,11 @@ def _basis(resp: dict) -> list:
     if eff == "unknown":
         claim("effect unknown: the log shows it started; reconcile before retrying",
               ["DARM.Lifecycle.no_silent_effect_ever"], ["A3"])
+    if eff == "succeeded" and "body_sha256" in resp:
+        claim("the response is recorded as the broker received it, from the server whose certificate "
+              "is recorded; the remote system's state is not attested", [],
+              ["attributing a remote effect needs a record from the remote side (darm-monitor E31)",
+               "URL normal form is checked by the broker: tested, not proved"])
     if d == "admit":
         claim("no other route to this effect exists", [],
               ["A1: evidenced in the reference deployment and monitored by verify_world, not proved"])
@@ -867,6 +915,10 @@ class Broker:
         for k, v in args:
             if k in PATH_KEYS and not path_in_normal_form(v):
                 return None, tool, {"decision": "reject", "error": "path not in normal form"}
+            if k in URL_KEYS and not http_get.normal_url(v):
+                return None, tool, {"decision": "reject", "error": "url not in normal form"}
+        if tool == "http_get" and [k for k, _ in args] != ["url"]:
+            return None, tool, {"decision": "reject", "error": "http_get takes exactly one argument, url"}
         inv = canonicalize(self.cfg, tool, args)
         self._matched_intent = None
         if self.intents is not None:
@@ -1007,6 +1059,9 @@ class Broker:
                     except Exception:
                         pass                                                  # refusing never depends on the log
                     return refused
+            if tool == "http_get":
+                # the URL is on record before anything is sent: evidence before effect
+                resp = dict(resp, url={a["key"]: a["value"] for a in inv["args"]}.get("url"))
             try:
                 self._record(rid, "prepared", inv, tool, resp)
             except Exception as e:
@@ -1036,13 +1091,18 @@ class Broker:
                 result = {"error": "read refused: " + verdict["reason"],
                           "failure": "attestation", "read_attestation": verdict}
         ok = "error" not in result
+        unknown = bool(result.pop("_effect_unknown", False))   # sent, no complete answer (E31)
 
         response_fields = dict(
             request_id=rid,
             executed=ok,
-            effect="succeeded" if ok else "failed",
+            effect="succeeded" if ok else ("unknown" if unknown else "failed"),
             **result,
         )
+        if tool == "http_get":
+            # what the log keeps of a remote call: never the body, never the credential
+            response_fields["remote"] = {k: result.get(k) for k in
+                                         ("status", "body_sha256", "truncated", "server", "location")}
 
         if intended is not None:
             observed = _observe(self.cfg, real)
@@ -1069,7 +1129,8 @@ class Broker:
             resp["evidence"] = "recorded"
             if self.intents is not None and rid in self._reserved:
                 verdict = (resp.get("reconciliation") if intended is not None
-                           else ("confirmedSuccess" if ok else "confirmedFailure"))
+                           else ("confirmedSuccess" if ok else
+                                 "unresolved" if unknown else "confirmedFailure"))
                 try:
                     self._settle_and_record(rid, verdict, resp)
                 except Exception as e:
@@ -1078,7 +1139,8 @@ class Broker:
             resp["evidence"] = "outcome_unrecorded"   # log shows prepared, no outcome
         if key is not None:
             # B7b: done only if the effect occurred; a failed attempt is failed
-            state = "done" if resp.get("effect") == "succeeded" else "failed"
+            state = ("done" if resp.get("effect") == "succeeded"
+                     else "pending" if resp.get("effect") == "unknown" else "failed")   # unknown: never guess
             self._keys[key] = dict(self._keys[key], state=state, effect=resp.get("effect"))
         return resp
 
@@ -1095,6 +1157,8 @@ class Broker:
             "reconciliation": response.get("reconciliation"),
             "peer": response.get("peer"),
             "target": response.get("target"),
+            "url": response.get("url"),
+            "remote": response.get("remote"),
             "source": response.get("source"),
             "private": response.get("private"),
             "destination_before": response.get("destination_before"),

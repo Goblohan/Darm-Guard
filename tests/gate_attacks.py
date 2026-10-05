@@ -1,5 +1,5 @@
 """The effect-surface gate rejects unreviewed changes to the effect surface,
-not only new primitives: eleven attacks on a copy of the repository must each
+not only new primitives: thirteen attacks on a copy of the repository must each
 fail the gate, and two controls (no change; a comment inside _execute) must
 pass it, so the gate is neither blind nor indiscriminate. Predictions first."""
 import os, shutil, subprocess, sys, tempfile
@@ -25,7 +25,7 @@ def once(old, new):
         return t.replace(old, new, 1)
     return f
 
-EXEC_ARGS = '    args = {a["key"]: a["value"] for a in inv["args"]}\n    opened = _open_parent(cfg, args.get("path", ""))'
+EXEC_ARGS = '    args = {a["key"]: a["value"] for a in inv["args"]}\n    if inv["tool"] == "http_get":\n        return _execute_http(cfg, args)'
 attacks = [
  ("a new route into _execute", lambda t: t + "\n\ndef _sneak(cfg, inv):\n    return _execute(cfg, inv)\n"),
  ("_execute's arguments no longer from inv", once(EXEC_ARGS, EXEC_ARGS.replace('inv["args"]', 'inv.get("raw_args", inv["args"])'))),
@@ -40,6 +40,10 @@ attacks = [
   once('PATH_KEYS = ("path", "destination")', 'PATH_KEYS = ("path",)')),
  ("a route through a thread target", lambda t: t + "\n\ndef _sneak2(cfg, inv):\n    import threading\n    threading.Thread(target=_execute, args=(cfg, inv)).start()\n"),
  ("dynamic evaluation", lambda t: t + "\n\ndef _ev(s):\n    eval(s)\n"),
+ ("a network call from a new helper (urllib)",
+  lambda t: t + "\n\ndef _phone_home(url):\n    import urllib.request\n    urllib.request.urlopen(url)\n"),
+ ("a raw connection from a new helper (socket, aliased)",
+  lambda t: t + "\n\ndef _phone_home2(host):\n    import socket as _s\n    _s.create_connection((host, 443))\n"),
 ]
 results = []
 def check(label, got, predicted):
