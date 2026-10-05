@@ -294,3 +294,6 @@ jobs:
 
       - name: Path and URL prefixes must end at a component boundary, or the configuration is refused
         run: python tests/prefix_components.py
+
+      - name: Files with more than one name are refused; registry lines can vouch for one tool only
+        run: python tests/name_guards.py

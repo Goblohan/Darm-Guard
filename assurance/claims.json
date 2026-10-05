@@ -18,14 +18,15 @@
    ],
    "tests": [
     "tests/r23_conflict.py",
-    "tests/delete_tool.py"
+    "tests/delete_tool.py",
+    "tests/name_guards.py"
    ],
    "implementation": [
     "darm_guard/broker.py:_cas_replace"
    ],
    "correspondence": "R23 conflict tests drive the broker through foreign writes between observation and replace and check the outcome against casOpt.",
    "counterexample": "An independent delete-then-write pair can half-apply (B6c independent_pair_can_lose).",
-   "limitation": "A foreign writer between observation and replace is detected as a conflict, not prevented; hard links are outside the model.",
+   "limitation": "A foreign writer between observation and replace is detected as a conflict, not prevented; a file with more than one name (a hard link) is refused for reads and writes, checked when it is opened; a link made after that check is outside the model.",
    "bridge": "tested"
   },
   {

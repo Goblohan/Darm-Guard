@@ -24,6 +24,7 @@ import hmac
 from .attest import KeyRing
 import json
 import os
+import re
 import socket
 import socketserver
 import ctypes
@@ -65,14 +66,27 @@ class BrokerConfig:
     read_requires_attestation: bool = False  # E33: refuse reads not attributed to a broker write
     vouched_manifest: Optional[str] = None   # E33b: principal-held (path, sha256) pairs
     http: Optional[dict] = None              # http_get: credentials, allowed private hosts, CA file, limits
+    # registry lines naming a tool ("read_file /workspace/notes.txt") vouch for that tool only:
+    # ((tool, values, patterns), ...); untagged lines (registry, patterns) vouch for every tool
+    tool_registry: Tuple = ()
+
+    def registry_for(self, tool):
+        """The values and patterns vouched for `tool`: untagged lines, plus lines naming it."""
+        values, pats = set(self.registry), list(self.patterns)
+        for t, vs, ps in self.tool_registry:
+            if t == tool:
+                values |= set(vs)
+                pats += list(ps)
+        return frozenset(values), tuple(pats)
 
     @staticmethod
     def load(config_path: str, registry_path: str) -> "BrokerConfig":
         cfg = json.load(open(config_path))
         lines = [line.strip() for line in open(registry_path) if line.strip()]
+        lines, tagged = _split_registry(lines, cfg["policy"])
         reg = [l for l in lines if not l.endswith("*")]
         pats = tuple(l[:-1] for l in lines if l.endswith("*"))
-        _check_prefixes(cfg["policy"], pats)
+        _check_prefixes(cfg["policy"], pats + tuple(p for _, _, ps in tagged for p in ps))
         issued = cfg.get("issued_at")
         return BrokerConfig(cfg["policy"], tuple(cfg["credential_tools"]),
                             frozenset(reg), os.path.realpath(cfg["workspace"]),
@@ -80,7 +94,7 @@ class BrokerConfig:
                             cfg.get("ttl_seconds"), pats,
                             bool(cfg.get("read_requires_attestation", False)),
                             _principal_held(cfg.get("vouched_manifest"), cfg["workspace"]),
-                            _http_config(cfg.get("http"), cfg["workspace"]))
+                            _http_config(cfg.get("http"), cfg["workspace"]), tagged)
 
     def expired(self, now: Optional[datetime] = None) -> bool:
         if self.issued_at is None or self.ttl_seconds is None:
@@ -108,6 +122,27 @@ def _prefix_problem(p: str, kind: str) -> str:
         return (f"path prefix {p!r} does not end at a component boundary, so it also admits "
                 f"siblings such as {p + '-other/'!r}; end it with '/', or list exact paths")
     return ""
+
+
+def _split_registry(lines, policy):
+    """Registry lines are values ('/workspace/notes.txt'), patterns ('/workspace/reports/*'), or
+    either preceded by a tool name ('read_file /workspace/notes.txt'), which vouches for that tool
+    only. Untagged lines vouch for every tool, as before. A line that names a tool the policy does
+    not have is refused rather than read as a value."""
+    tools = {t.get("tool") for t in policy.get("tools", [])}
+    untagged, per_tool = [], {}
+    for line in lines:
+        m = re.match(r"^([a-z][a-z0-9_]*)\s+(\S.*)$", line)
+        if m is None:
+            untagged.append(line)
+            continue
+        tool, value = m.group(1), m.group(2).strip()
+        if tool not in tools:
+            raise ValueError(f"registry line {line!r} names the tool {tool!r}, which the policy does not have")
+        per_tool.setdefault(tool, []).append(value)
+    tagged = tuple((t, frozenset(v for v in vs if not v.endswith("*")),
+                    tuple(v[:-1] for v in vs if v.endswith("*"))) for t, vs in sorted(per_tool.items()))
+    return untagged, tagged
 
 
 def _check_prefixes(policy: dict, patterns) -> None:
@@ -220,6 +255,13 @@ def path_in_normal_form(value: str) -> bool:
     return all(c not in ("", ".", "..") for c in value[1:].split("/"))
 
 
+# The policy names one path; a file with other names (hard links) is reachable by names it
+# does not cover, so reads and writes of such a file are refused. Deletes and renames act on
+# the name alone and are unaffected. A link made after the check is outside this guarantee.
+MULTIPLE_NAMES = ("the target has more than one name (a hard link); refused, because the policy "
+                  "covers this name and the file is reachable by others")
+
+
 def assign_prov(registry: frozenset, value: str, patterns=()) -> str:
     """B2a assignProv: the broker, not the agent, decides provenance.
     Exact registered values are authoritative; values matching a
@@ -233,8 +275,9 @@ def assign_prov(registry: frozenset, value: str, patterns=()) -> str:
 
 def canonicalize(cfg: BrokerConfig, tool: str, args) -> dict:
     """B1 canonicalize: one invocation, provenance assigned by the broker."""
+    values, pats = cfg.registry_for(tool)
     return {"tool": tool,
-            "args": [{"key": k, "value": v, "prov": assign_prov(cfg.registry, v, cfg.patterns)}
+            "args": [{"key": k, "value": v, "prov": assign_prov(values, v, pats)}
                      for k, v in args]}
 
 
@@ -776,6 +819,8 @@ def _execute(cfg: BrokerConfig, inv: dict, expected=None, attest=None,
         if inv["tool"] == "read_file":
             fd = os.open(leaf, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=pfd)
             with os.fdopen(fd) as f:
+                if os.fstat(f.fileno()).st_nlink > 1:   # the opened file itself, not a re-resolved name
+                    return {"error": MULTIPLE_NAMES}
                 content = f.read()
                 try:   # from the same open file as the content: never re-resolved
                     raw_att = os.getxattr(f.fileno(), XATTR)
@@ -783,6 +828,11 @@ def _execute(cfg: BrokerConfig, inv: dict, expected=None, attest=None,
                     raw_att = None
                 return {"content": content, "_raw_attestation": raw_att}
         if inv["tool"] == "write_file":
+            try:
+                if os.stat(leaf, dir_fd=pfd, follow_symlinks=False).st_nlink > 1:
+                    return {"error": MULTIPLE_NAMES}
+            except FileNotFoundError:
+                pass
             content = args.get("content", "")
             tmp = f".{leaf}.darm-tmp-{uuid.uuid4().hex}"
             fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644,
@@ -1006,8 +1056,9 @@ class Broker:
         request = {"policy": self.cfg.policy,
                    "credential": {"tools": list(self.cfg.credential_tools),
                                   "expired": self.cfg.expired(now)},
-                   "registry": {"values": sorted(self.cfg.registry),
-                                "prefixes": list(self.cfg.patterns)},
+                   # the kernel is given exactly the registry the broker canonicalizes with
+                   "registry": {"values": sorted(self.cfg.registry_for(tool)[0]),
+                                "prefixes": list(self.cfg.registry_for(tool)[1])},
                    "proposal": {"tool": tool, "args": [[k, v] for k, v in args]}}
         d = self.kernel.decide(request)
         if not d.admitted:
@@ -1767,7 +1818,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(prog="darm-broker",
                                  description="Run the DARM broker: it holds the tools, asks the DARM kernel, and executes only what the kernel admits.")
     ap.add_argument("--config", required=True, help="JSON: policy, credential_tools, workspace")
-    ap.add_argument("--registry", required=True, help="principal-registered values, one per line")
+    ap.add_argument("--registry", required=True, help="principal-registered values, one per line; a line may "
+                    "begin with a tool name (read_file /workspace/notes.txt) to vouch for that tool only")
     ap.add_argument("--socket", default="/tmp/darm-broker.sock")
     ap.add_argument("--audit", default="darm-broker-audit.jsonl")
     ap.add_argument("--intents", help="principal-held single-use intents, one per line: a tool, optionally with the exact arguments it authorizes (E24 to E24d)")

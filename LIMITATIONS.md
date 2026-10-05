@@ -61,7 +61,7 @@ Under a burst larger than the listen backlog, excess clients are refused at conn
 A write or delete takes effect only if the target is in the state recorded at admission; otherwise nothing changes.
 
 - **Bridge:** tested
-- **Limitation:** A foreign writer between observation and replace is detected as a conflict, not prevented; hard links are outside the model.
+- **Limitation:** A foreign writer between observation and replace is detected as a conflict, not prevented; a file with more than one name (a hard link) is refused for reads and writes, checked when it is opened; a link made after that check is outside the model.
 
 ### `causal-coverage`
 
