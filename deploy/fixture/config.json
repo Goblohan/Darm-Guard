@@ -2,6 +2,10 @@
    {"tool": "read_file",  "rules": [{"key": "path", "allowedValues": [], "allowedPrefixes": ["/workspace/"]}]},
    {"tool": "list_dir",   "rules": [{"key": "path", "allowedValues": [], "allowedPrefixes": ["/workspace/"]}]},
    {"tool": "write_file", "rules": [{"key": "path", "allowedValues": [], "allowedPrefixes": ["/workspace/reports/"]},
-                                    {"key": "content", "allowedValues": [], "allowedPrefixes": [""], "payload": true}]}]},
- "credential_tools": ["read_file", "list_dir", "write_file"],
- "workspace": "/data/workspace"}
+                                    {"key": "content", "allowedValues": [], "allowedPrefixes": [""], "payload": true}]},
+   {"tool": "http_get",   "rules": [{"key": "url", "allowedValues": [], "allowedPrefixes": ["https://api.internal:8443/v1/"]}]}]},
+ "credential_tools": ["read_file", "list_dir", "write_file", "http_get"],
+ "workspace": "/data/workspace",
+ "http": {"credentials": [{"prefix": "https://api.internal:8443/v1/", "header": "Authorization",
+                           "value_file": "/data/secrets/api-token"}],
+          "allow_private": ["api.internal"], "cafile": "/certs/api-cert.pem"}}

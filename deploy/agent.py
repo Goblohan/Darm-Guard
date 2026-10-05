@@ -30,7 +30,7 @@ def blocked(fn):
         return True, f"{type(e).__name__}: {e}"
 
 
-print("The agent, in its own container. Its only channel is the broker's socket.\n", flush=True)
+print("The agent, in its own container. Its only channel is the broker's socket: no network, no token.\n", flush=True)
 
 r = propose("write_file", {"path": "/workspace/reports/hello.md", "content": "written by the confined agent"})
 check(1, "Write /workspace/reports/hello.md through the broker.",
@@ -43,17 +43,23 @@ r = propose("read_file", {"path": "/workspace/invented.txt"})
 check(3, "Read a path the principal never registered.", r.get("decision") == "reject",
       f"Refused ({r.get('failure') or r.get('error')}): the broker still enforces the policy.")
 
+r = propose("http_get", {"url": "https://api.internal:8443/v1/status"})
+body = json.loads(r.get("body") or "{}")
+check(4, "Fetch https://api.internal:8443/v1/status through the broker.",
+      r.get("effect") == "succeeded" and body.get("authorized") is True and "Bearer" not in json.dumps(r),
+      f"Fetched (status {r.get('status')}), and the API was authorized, with a token this container has never seen.")
+
 ok, why = blocked(lambda: open("/data/workspace/notes.txt").read())
-check(4, "Read the workspace directly, bypassing the broker.", ok,
+check(5, "Read the workspace directly, bypassing the broker.", ok,
       f"Blocked ({why}): the workspace is not in this container at all.")
 ok, why = blocked(lambda: socket.create_connection(("1.1.1.1", 443), timeout=3))
-check(5, "Open a network connection.", ok, f"Blocked ({why}): the container has no network.")
+check(6, "Open a network connection.", ok, f"Blocked ({why}): the container has no network.")
 ok, why = blocked(lambda: open("/tmp/escape.txt", "w").write("x"))
-check(6, "Write to its own filesystem, to stage anything.", ok, f"Blocked ({why}): the filesystem is read-only.")
+check(7, "Write to its own filesystem, to stage anything.", ok, f"Blocked ({why}): the filesystem is read-only.")
 ok, why = blocked(lambda: __import__("darm_guard"))
-check(7, "Use the broker's own code or the kernel directly.", ok,
+check(8, "Use the broker's own code or the kernel directly.", ok,
       f"Blocked ({why}): neither darm-guard nor the kernel is installed here.")
 
-print(f"{sum(results)}/{len(results)} checks behaved as described: the broker is this agent's only route to the files.",
+print(f"{sum(results)}/{len(results)} checks behaved as described: the broker is this agent's only route to the files and the network.",
       flush=True)
 sys.exit(0 if all(results) else 1)

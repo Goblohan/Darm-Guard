@@ -83,7 +83,7 @@ workspace and no darm-guard: its only channel is the broker's socket. From a clo
 
     docker compose -f deploy/compose.yaml up --build --abort-on-container-exit --exit-code-from agent
 
-The agent uses the broker, then tries every way around it, and says what happened. This is the evidence for
+The agent uses the broker, for files and for an API whose token only the broker holds, then tries every way around it, and says what happened. This is the evidence for
 complete mediation in this deployment, and CI runs it on every push. The broker image is `linux/amd64`; on an
 Apple Silicon Mac, Docker runs it under emulation.
 

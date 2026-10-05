@@ -1,15 +1,36 @@
-# The broker and the agent, each in its own container. The agent has no network, a read-only
-# filesystem, no workspace and no darm-guard: its only channel is the broker's socket.
+# The broker, a stand-in API and the agent, each in its own container. The agent has no network, a
+# read-only filesystem, no workspace, no darm-guard and no API token: its only channel is the
+# broker's socket, and it still fetches from the API, through the broker, which holds the token.
 #   docker compose -f deploy/compose.yaml up --build --abort-on-container-exit --exit-code-from agent
 name: darm-guard-mediation
 services:
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/broker.Dockerfile
+    platform: linux/amd64
+    command: ["python", "/home/darm/src/deploy/api.py"]
+    networks:
+      default:
+        aliases: [api.internal]
+    volumes:
+      - certs:/certs
+    healthcheck:
+      test: ["CMD", "test", "-f", "/certs/api-cert.pem"]
+      interval: 1s
+      timeout: 2s
+      retries: 90
   broker:
     build:
       context: ..
       dockerfile: deploy/broker.Dockerfile
     platform: linux/amd64          # the kernel binary is linux x86_64; Docker emulates it elsewhere
+    depends_on:
+      api:
+        condition: service_healthy
     volumes:
       - sock:/sock
+      - certs:/certs:ro
   agent:
     image: python:3.12-slim
     depends_on:
@@ -24,3 +45,4 @@ services:
     command: ["python", "/agent.py"]
 volumes:
   sock: {}
+  certs: {}

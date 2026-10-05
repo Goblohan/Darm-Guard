@@ -27,7 +27,7 @@ the directory for you to inspect: `audit.jsonl` (the log), `audit.jsonl.pub.json
     docker compose -f deploy/compose.yaml up --build --abort-on-container-exit --exit-code-from agent
 
 The broker and the agent run in separate containers. The agent's has no network, a read-only filesystem, no
-workspace and no darm-guard: the broker's socket is its only channel. It uses the broker, then tries to read the
+workspace and no darm-guard: the broker's socket is its only channel. It uses the broker, including a fetch from a stand-in API whose token only the broker holds, then tries to read the
 workspace directly, open a network connection, write to its own filesystem and use the broker's code, and reports
 each attempt. This is evidence for complete mediation in this deployment. It is not a proof for others: a
 container escape would be a failure of the isolation layer, and any other deployment has to establish mediation
@@ -64,6 +64,10 @@ paths, so a refusal shows the broker, not the registry, stopping it.
 | the same write sent twice with the same `"idempotency_key"` | the second reports `already_applied`; written once |
 | a second broker started on the same audit log | refused at start, with a message saying why |
 | a file changed directly in `/tmp/darmdemo/workspace/`, then the world checked against the log (step 4) | the change is reported |
+
+The network attempts are covered too. An unregistered URL, a host disguised with `@`, and the cloud metadata address
+are steps 9 to 11 of `darm-guard demo`; `tests/http_get_broker.py` runs those, plain `http://`, a redirect, a timeout
+and an API that echoes the credential, against the broker.
 
 The full list of what the broker does not defend against is in [THREAT_MODEL.md](THREAT_MODEL.md) and
 [LIMITATIONS.md](LIMITATIONS.md); an attack that works against something they do not exclude is a vulnerability.
