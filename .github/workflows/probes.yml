@@ -291,3 +291,6 @@ jobs:
 
       - name: darm-guard audit and report, on the demo's kept evidence
         run: python tests/audit_report.py
+
+      - name: Path and URL prefixes must end at a component boundary, or the configuration is refused
+        run: python tests/prefix_components.py

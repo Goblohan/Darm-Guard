@@ -72,6 +72,7 @@ class BrokerConfig:
         lines = [line.strip() for line in open(registry_path) if line.strip()]
         reg = [l for l in lines if not l.endswith("*")]
         pats = tuple(l[:-1] for l in lines if l.endswith("*"))
+        _check_prefixes(cfg["policy"], pats)
         issued = cfg.get("issued_at")
         return BrokerConfig(cfg["policy"], tuple(cfg["credential_tools"]),
                             frozenset(reg), os.path.realpath(cfg["workspace"]),
@@ -86,6 +87,47 @@ class BrokerConfig:
             return False
         now = now or datetime.now(self.issued_at.tzinfo)
         return (now - self.issued_at).total_seconds() > self.ttl_seconds
+
+
+def _prefix_problem(p: str, kind: str) -> str:
+    """Why a path or URL prefix may not be used, or '' if it may. The kernel matches a prefix
+    as a string; the file system and the HTTP client read the result by components. The two
+    readings agree only if the prefix ends at a component boundary; otherwise the string
+    reading admits more than the components the principal named.
+    A prefix ending inside a component also admits its siblings: '/workspace/reports' admits
+    '/workspace/reports-private/', and 'https://127.0.0.1' admits 'https://127.0.0.10/'."""
+    if p == "":
+        return ""                       # everything, under both readings
+    if kind == "url":
+        if not p.endswith("/") or not http_get.normal_url(p):
+            return (f"URL prefix {p!r} does not end at a component boundary, so it also admits "
+                    f"URLs such as {p + '0/' if not p.endswith('/') else p!r}; give a URL in normal "
+                    f"form ending in '/', or list exact URLs")
+        return ""
+    if not p.endswith("/"):
+        return (f"path prefix {p!r} does not end at a component boundary, so it also admits "
+                f"siblings such as {p + '-other/'!r}; end it with '/', or list exact paths")
+    return ""
+
+
+def _check_prefixes(policy: dict, patterns) -> None:
+    """Refuse, at load, any policy prefix or registry pattern for a path or URL that does not
+    end at a component boundary (see _prefix_problem)."""
+    problems = []
+    for t in policy.get("tools", []):
+        for rule in t.get("rules", []):
+            kind = "path" if rule.get("key") in PATH_KEYS else "url" if rule.get("key") in URL_KEYS else None
+            for p in rule.get("allowedPrefixes", []) if kind else []:
+                why = _prefix_problem(p, kind)
+                if why:
+                    problems.append(f"policy, {t.get('tool')}.{rule['key']}: {why}")
+    for p in patterns:
+        kind = "path" if p.startswith("/") else "url" if p.startswith(("https://", "http://")) else None
+        why = _prefix_problem(p, kind) if kind else ""
+        if why:
+            problems.append(f"registry pattern {p + '*'!r}: {why}")
+    if problems:
+        raise ValueError("configuration refused:\n  " + "\n  ".join(problems))
 
 
 def sha256_file(path: str) -> str:
