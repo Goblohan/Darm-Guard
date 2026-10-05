@@ -1659,9 +1659,12 @@ def main() -> None:
         state["pending"] = True
     signal.signal(signal.SIGTERM, _stop)
     cfg = BrokerConfig.load(a.config, a.registry)
-    srv = serve(cfg, a.socket, a.audit, intents_path=a.intents,
-                checkpoint_sink=a.checkpoint_sink, checkpoint_every=a.checkpoint_every,
-                revocations_path=a.revocations)
+    try:
+        srv = serve(cfg, a.socket, a.audit, intents_path=a.intents,
+                    checkpoint_sink=a.checkpoint_sink, checkpoint_every=a.checkpoint_every,
+                    revocations_path=a.revocations)
+    except RuntimeError as e:   # a refusal to start (the log or intents held by another broker): say so plainly
+        raise SystemExit(f"darm-broker: {e}")
     cfg_hash, reg_hash = sha256_file(a.config), sha256_file(a.registry)
     srv.broker.audit.append({"event": "start", "config_sha256": cfg_hash,
                              "registry_sha256": reg_hash})

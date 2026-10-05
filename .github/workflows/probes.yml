@@ -273,3 +273,9 @@ jobs:
 
       - name: darm-guard demo, every step behaving as it says
         run: python -m darm_guard.cli demo
+
+      - name: EVALUATING.md names only files, links and commands that exist
+        run: python tests/evaluating_refs.py
+
+      - name: A second broker on a held audit log refuses with a plain message, not a traceback
+        run: python tests/second_broker_message.py

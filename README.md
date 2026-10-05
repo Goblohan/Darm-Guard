@@ -4,7 +4,7 @@
 
 An agent proposes tool calls. A broker that holds the tools asks the DARM decision kernel, executes only the invocation the kernel admits, and leaves signed evidence of every effect. The kernel is a Lean 4 model, compiled; its theory is in [darm-monitor](https://github.com/Goblohan/darm-monitor).
 
-*PerceptraAI Lab* · [Limitations](LIMITATIONS.md) · [Threat model](THREAT_MODEL.md) · [Formal backing](FORMAL_BACKING.md) · [Broker design](docs/broker-design.md) · [Changelog](CHANGELOG.md) · [Earlier APIs](docs/legacy-api.md)
+*PerceptraAI Lab* · [Evaluating it](EVALUATING.md) · [Limitations](LIMITATIONS.md) · [Threat model](THREAT_MODEL.md) · [Formal backing](FORMAL_BACKING.md) · [Broker design](docs/broker-design.md) · [Changelog](CHANGELOG.md) · [Earlier APIs](docs/legacy-api.md)
 
 ```
 agent ── {tool, args} ──▶ DARM broker ── proposal + nonce ──▶ darmkernel (the Lean model, compiled)
@@ -35,7 +35,7 @@ agent ── {tool, args} ──▶ DARM broker ── proposal + nonce ──�
 | Bridges from model to code | 1 construction, 1 proved, 28 tested, 0 assumed |
 | Effect sites | 45 found, 45 classified (11 closed, 7 continuation, 27 exception, 0 open) |
 | Mutations, each caught by a test | 19 |
-| Gate steps run on every push | 56 |
+| Gate steps run on every push | 58 |
 <!-- figures:end -->
 
 Every claim in [`assurance/claims.json`](assurance/claims.json) names its theorems in darm-monitor, its tests, and its **bridge** to the code: by construction, proved, tested, or assumed. `scripts/check_assurance.py` checks every claim against the theorems and the threat model in both directions on each build, and `scripts/mutation_gate.py` breaks each load-bearing check to show a test catches it. The table above is generated from the repository by `scripts/readme_figures.py`, and CI fails if it falls out of date.
