@@ -244,7 +244,7 @@ The conditions behind each check are proved in [darm-monitor](https://github.com
 
 ## License
 
-MIT
+Apache License 2.0 from the next release: see [LICENSE](LICENSE) and [NOTICE](NOTICE). Versions 0.22.0 and earlier were published under the MIT License, and remain so. Contributions are accepted under the [Developer Certificate of Origin](CONTRIBUTING.md). The names DARM, DARM Guard and PerceptraAI are not licensed under it (Apache-2.0, section 6).
 
 ---
 
