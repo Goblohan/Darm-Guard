@@ -270,3 +270,6 @@ jobs:
 
       - name: LIMITATIONS.md states every claim's limitation, generated from the assurance graph
         run: python scripts/limitations.py --check
+
+      - name: darm-guard demo, every step behaving as it says
+        run: python -m darm_guard.cli demo

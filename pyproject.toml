@@ -22,6 +22,7 @@ keywords = ["ai-safety", "agent-governance", "formal-verification"]
 include = ["darm_guard*"]
 
 [project.scripts]
+darm-guard = "darm_guard.cli:main"
 darm-guard-install-kernel = "darm_guard.install:main"
 darm-verify = "darm_guard.verify:main"
 darm-broker = "darm_guard.broker:main"
