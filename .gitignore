@@ -5,3 +5,6 @@ dist/
 
 # Never publish: private experiments, including material under responsible disclosure
 experiments/
+
+# Local package builds (pip wheel ., python -m build)
+build/
