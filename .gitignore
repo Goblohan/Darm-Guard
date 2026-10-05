@@ -2,3 +2,6 @@ __pycache__/
 dist/
 *.egg-info/
 .venv/
+
+# Never publish: private experiments, including material under responsible disclosure
+experiments/
