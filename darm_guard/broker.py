@@ -196,6 +196,31 @@ def canonicalize(cfg: BrokerConfig, tool: str, args) -> dict:
                      for k, v in args]}
 
 
+def _proposal_summary(obj) -> dict:
+    """What a request asked for, as the log keeps it: its tool, and each path, destination and
+    URL verbatim (cut at 1,024 characters); every other value, such as a file's content, only as
+    its SHA-256 and length, so the log proves what was asked without storing it. Fields beyond
+    tool and args, which only a hostile or broken agent sends, are named."""
+    if not isinstance(obj, dict):
+        return {"malformed": True}
+    tool = obj.get("tool")
+    out = {"tool": tool[:64] if isinstance(tool, str) else None, "args": []}
+    args = obj.get("args")
+    for a in (args if isinstance(args, list) else [])[:16]:
+        if isinstance(a, list) and len(a) == 2 and all(isinstance(x, str) for x in a):
+            k, v = a
+            if k in PATH_KEYS or k in URL_KEYS:
+                out["args"].append([k[:64], v[:1024]])
+            else:
+                out["args"].append([k[:64], {"sha256": hashlib.sha256(v.encode()).hexdigest(), "length": len(v)}])
+        else:
+            out["args"].append(["?", "malformed argument"])
+    extra = sorted(k for k in obj if k not in ("tool", "args"))
+    if extra:
+        out["extra_fields"] = [str(k)[:64] for k in extra[:8]]
+    return out
+
+
 def invocation_hash(inv: dict) -> str:
     return hashlib.sha256(json.dumps(inv, sort_keys=True).encode()).hexdigest()
 
@@ -896,6 +921,7 @@ class Broker:
                               for r, l in json.load(open(intents_path + ".reserved")).items()}
         self.revocations_path = None  # E24c: append-only, written by the principal, only read here
         self._intents_frozen = False
+        self._proposal = None          # the current request's summary, for its log records
         self._intents_written = (open(intents_path).read()
                                  if intents_path and os.path.exists(intents_path) else None)
         self.intents_path = intents_path
@@ -972,6 +998,7 @@ class Broker:
                 return {"decision": "reject", "request_id": rid, "effect": "none",
                         "error": "malformed idempotency key"}
         with self._lock:
+            self._proposal = _proposal_summary(obj)
             last = self.audit.last_ts
             if last and datetime.now() < last - timedelta(seconds=5):
                 resp = {"decision": "reject", "failure": "clock", "request_id": rid,
@@ -1156,6 +1183,7 @@ class Broker:
             "intent_consumed": response.get("intent_consumed"),
             "reconciliation": response.get("reconciliation"),
             "peer": response.get("peer"),
+            "proposal": self._proposal if event in ("decision", "duplicate", "prepared") else None,
             "target": response.get("target"),
             "url": response.get("url"),
             "remote": response.get("remote"),

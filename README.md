@@ -35,7 +35,7 @@ agent ── {tool, args} ──▶ DARM broker ── proposal + nonce ──�
 | Bridges from model to code | 1 construction, 1 proved, 29 tested, 0 assumed |
 | Effect sites | 53 found, 53 classified (13 closed, 7 continuation, 33 exception, 0 open) |
 | Mutations, each caught by a test | 19 |
-| Gate steps run on every push | 61 |
+| Gate steps run on every push | 62 |
 <!-- figures:end -->
 
 Every claim in [`assurance/claims.json`](assurance/claims.json) names its theorems in darm-monitor, its tests, and its **bridge** to the code: by construction, proved, tested, or assumed. `scripts/check_assurance.py` checks every claim against the theorems and the threat model in both directions on each build, and `scripts/mutation_gate.py` breaks each load-bearing check to show a test catches it. The table above is generated from the repository by `scripts/readme_figures.py`, and CI fails if it falls out of date.

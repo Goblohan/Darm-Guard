@@ -251,6 +251,9 @@ def run(keep=False):
           "See LIMITATIONS.md for every claim's limits.")
     if keep:
         print(f"\nKept for inspection: {d}")
+        print(f"  what the agent tried:   darm-guard report --audit {audit}")
+        print(f"  check the evidence:     darm-guard audit --audit {audit} "
+              f"--config {d}/config.json --registry {d}/registry.txt")
     else:
         shutil.rmtree(d, ignore_errors=True)
     return 0 if all(results) else 1

@@ -91,6 +91,16 @@ checks every file in the workspace against the log, in both directions, with the
 detects edits but not the removal of its newest entries; started with `--checkpoint-sink`, the broker also
 publishes signed checkpoints of the log to a place this host cannot rewrite, which detect that too.
 
+Or, as one command each:
+
+    darm-guard audit --audit /tmp/darmdemo/audit.jsonl --config /tmp/darmdemo/config.json --registry /tmp/darmdemo/registry.txt
+    darm-guard report --audit /tmp/darmdemo/audit.jsonl
+
+`audit` checks the chain and every governed file with the public key alone, and exits non-zero on any finding.
+`report` lists every request the agent made, admitted or refused, with its path or URL, the decision and the
+reason. The log keeps paths and URLs, but a file's content only as its hash and length, and never a credential.
+`darm-guard demo --keep` prints both commands for its own directory.
+
 ## 5. Check the claims, not only the behaviour
 
 - [assurance/claims.json](assurance/claims.json) lists every claim with its theorems in
@@ -109,3 +119,28 @@ publishes signed checkpoints of the log to a place this host cannot rewrite, whi
 A vulnerability: privately, as [SECURITY.md](SECURITY.md) describes. Anything else, including a stated
 assumption that fails in practice, or a step on this page that does not behave as described: an issue on this
 repository. Both are welcome; a counterexample is evidence about the limits of a claim, not something to hide.
+
+## If something goes wrong
+
+**`darm-broker: … is owned by another running broker; refusing to start`.** Another broker holds that audit
+log. One broker per log is deliberate: two would interleave its hash chain and could spend the same intent
+twice. Stop the other broker, or give this one its own `--audit` path.
+
+**`The DARM kernel is not installed`.** The broker decides nothing without its kernel, so it will not run. Run
+`darm-guard-install-kernel`, which downloads the pinned release and keeps it only if its SHA-256 matches.
+
+**`darm-guard: command not found` after installing.** pip put the commands where your shell does not look,
+typically `~/.local/bin`. Use a virtual environment (`python3 -m venv .venv`, then `.venv/bin/darm-guard demo`),
+add that directory to your `PATH`, or run `python3 -m darm_guard.cli demo`.
+
+**`error: externally-managed-environment`.** Your system Python does not accept packages from pip. Use a virtual
+environment as above; on Ubuntu, `python3 -m venv` needs the `python3-venv` package first.
+
+**`python3 -m venv` says `ensurepip is not available`.** The same: install `python3-venv` (on Ubuntu,
+`sudo apt install python3-venv`, or the version-specific package it names).
+
+**The Docker deployment is slow on an Apple Silicon Mac.** The kernel binary is `linux/amd64`, so Docker runs
+the broker under emulation. It is slower, not different.
+
+**Permission denied on `/var/run/docker.sock`.** Your user is not in the `docker` group: add it
+(`sudo usermod -aG docker "$USER"`), then open a new terminal.

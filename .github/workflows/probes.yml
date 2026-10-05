@@ -288,3 +288,6 @@ jobs:
 
       - name: Every workflow file is valid YAML, so GitHub runs it at all
         run: python scripts/check_workflows.py
+
+      - name: darm-guard audit and report, on the demo's kept evidence
+        run: python tests/audit_report.py
