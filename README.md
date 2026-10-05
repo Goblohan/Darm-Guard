@@ -33,7 +33,7 @@ agent ── {tool, args} ──▶ DARM broker ── proposal + nonce ──�
 | Claims, each citing its theorems and tests | 31 |
 | Threat-model guarantees, each backed by a claim | 29 |
 | Bridges from model to code | 1 construction, 1 proved, 29 tested, 0 assumed |
-| Effect sites | 50 found, 50 classified (13 closed, 7 continuation, 30 exception, 0 open) |
+| Effect sites | 53 found, 53 classified (13 closed, 7 continuation, 33 exception, 0 open) |
 | Mutations, each caught by a test | 19 |
 | Gate steps run on every push | 61 |
 <!-- figures:end -->

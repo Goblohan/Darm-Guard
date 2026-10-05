@@ -10,10 +10,13 @@ push, so if a step does not behave as described, that is a finding: please repor
     darm-guard-install-kernel
     darm-guard demo --keep
 
-The demo starts the broker in a temporary directory and runs nine steps: an agent's allowed write and read,
-then a write without the principal's intent, a path outside the policy even with an intent for it, a traversal,
-and a proposal that labels itself trusted, each refused with the kernel's or the broker's reason; an auditor then
-checks the evidence with the public key alone, and an edit made outside the broker is detected. `--keep` leaves
+The demo starts the broker in a temporary directory and runs fourteen steps. With files: an agent's
+allowed write and read, then a write without the principal's intent, a path outside the policy even with
+an intent for it, a traversal, and a proposal that labels itself trusted, each refused with the kernel's
+or the broker's reason. With the network, against a local HTTPS API the demo starts: a fetch the API
+receives with the principal's token while the agent never holds it, the token withheld when the API
+echoes it, and refusals for an unregistered URL, a disguised host and the cloud metadata address. An
+auditor then checks the evidence with the public key alone, and an edit made outside the broker is detected. `--keep` leaves
 the directory for you to inspect: `audit.jsonl` (the log), `audit.jsonl.pub.json` (the public key), the
 `config.json` and `registry.txt` the principal wrote, and the `workspace/`.
 
