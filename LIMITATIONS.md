@@ -112,6 +112,14 @@ A file consistently attested (rid, d) was put at its path by a broker operation 
 - **Bridge:** tested
 - **Limitation:** A rename carries identity under the rename's request, not the original write's; cryptographic unforgeability is assumed (the model's analogue: foreign actions never write the log).
 
+### `governed-get`
+
+An http_get reaches the network only for a URL the kernel admits, in URL normal form, at an address the principal allows; the agent never receives the principal's credential; and every call is recorded before it is sent, with what came back.
+
+- **Bridge:** tested
+- **Limitation:** The response is the broker's attestation: TLS does not make it provable to a third party, and the remote system's state is not attested. Data the agent places in an allowed URL reaches that host. URL normal form is checked by the broker before the decision: tested, not proved, since the kernel checks normal form for paths only. GET only, with no headers or body from the agent.
+- **Trusted:** the TLS library's certificate verification; the system resolver; the secrecy of the principal's credential files
+
 ### `input-coverage-limit`
 
 Authorization completeness constrains what an action produces, not what it drew on; when the boundary does not observe an agent's inputs, no intent can enforce coverage of them.

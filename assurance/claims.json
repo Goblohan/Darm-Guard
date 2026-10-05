@@ -869,6 +869,39 @@
    "counterexample": "A recovery that rolled forward on the log alone would perform a forged rename; recovery_forgery shows it rolls back.",
    "limitation": "An audit kept true by a gate, not a proof. By darm-monitor E34 the claim holds for every version the build accepts, provided: each --accept follows a correct review; the inventory sees every dependency that static analysis of the package can see (not monkeypatching from outside the package, nor behavior below Python); equal fingerprints mean equal code; and equal code behaves equally in the same environment. That the cones are local is shown by design, by the manifest pinning the analysis's own output, and by attack, not proved. It also rests on the signing key's secrecy, on only the broker writing the log's unprotected tail, and on fresh nonces (K7).",
    "bridge": "tested"
+  },
+  {
+   "id": "governed-get",
+   "claim": "An http_get reaches the network only for a URL the kernel admits, in URL normal form, at an address the principal allows; the agent never receives the principal's credential; and every call is recorded before it is sent, with what came back.",
+   "lean": [
+    {
+     "module": "E31RemoteEffects",
+     "theorems": [
+      "echoed_record_attributed",
+      "no_attribution_without_echo",
+      "observation_cannot_attribute",
+      "no_exactly_once_from_own_record"
+     ]
+    }
+   ],
+   "tests": [
+    "tests/http_get_unit.py",
+    "tests/http_get_broker.py"
+   ],
+   "implementation": [
+    "darm_guard/http_get.py:normal_url",
+    "darm_guard/http_get.py:fetch",
+    "darm_guard/broker.py:_execute_http"
+   ],
+   "correspondence": "tests/http_get_broker.py drives the broker through admitted, refused, redirected and timed-out calls against a local TLS server and checks each outcome and log record; a call sent without a complete answer is recorded as unknown, its intent kept reserved and its idempotency key unresolved, as no_exactly_once_from_own_record requires.",
+   "counterexample": "From the broker's own record, a call whose response was lost and a dropped call followed by an identical foreign request look the same (no_attribution_without_echo), so a remote effect is not attributed without a record from the remote side.",
+   "limitation": "The response is the broker's attestation: TLS does not make it provable to a third party, and the remote system's state is not attested. Data the agent places in an allowed URL reaches that host. URL normal form is checked by the broker before the decision: tested, not proved, since the kernel checks normal form for paths only. GET only, with no headers or body from the agent.",
+   "trusted_base": [
+    "the TLS library's certificate verification",
+    "the system resolver",
+    "the secrecy of the principal's credential files"
+   ],
+   "bridge": "tested"
   }
  ]
 }
