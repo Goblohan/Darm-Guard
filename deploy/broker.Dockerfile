@@ -2,6 +2,9 @@
 # kernel downloaded and verified at build time, the governed workspace (which exists only here),
 # and the principal's API token, outside the workspace. The api service runs the same image.
 FROM python:3.12-slim
+LABEL org.opencontainers.image.source="https://github.com/Goblohan/Darm-Guard" \
+      org.opencontainers.image.description="DARM Guard: the broker, the pinned kernel, and darm-guard demo" \
+      org.opencontainers.image.licenses="Apache-2.0"
 RUN useradd --create-home --uid 1000 darm && mkdir -p /sock /data /certs && chown darm:darm /sock /data /certs
 USER darm
 ENV PATH=/home/darm/.local/bin:$PATH

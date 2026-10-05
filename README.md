@@ -76,6 +76,16 @@ Each response reports the kernel's decision separately from the effect (`none`, 
 
 The principal's files (config, registry, intents, revocations) belong where the agent cannot write. File permissions are the deployer's responsibility.
 
+## Try it without installing anything
+
+In a browser: [open this repository in GitHub Codespaces](https://codespaces.new/Goblohan/Darm-Guard), wait
+for it to finish setting up, and run `darm-guard demo` in its terminal. With Docker, on any OS:
+
+    docker run --rm ghcr.io/goblohan/darm-guard darm-guard demo
+
+The image is the one the deployment below uses. Each release builds it and runs the demo inside it before
+publishing it, and every push to this repository builds it and runs the demo too.
+
 ## Try it in Docker, on any OS
 
 The same broker, with the agent in a second container that has no network, a read-only filesystem, no

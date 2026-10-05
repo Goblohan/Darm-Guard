@@ -6,6 +6,8 @@ push, so if a step does not behave as described, that is a finding: please repor
 
 ## 1. See it work (two minutes)
 
+Without installing anything: open the repository in [GitHub Codespaces](https://codespaces.new/Goblohan/Darm-Guard) and run `darm-guard demo` there, or, with Docker, `docker run --rm ghcr.io/goblohan/darm-guard darm-guard demo`. To install it:
+
     pip install darm-guard
     darm-guard-install-kernel
     darm-guard demo --keep

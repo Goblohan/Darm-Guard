@@ -1,0 +1,14 @@
+{
+  "name": "DARM Guard",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "postCreateCommand": "pip install -e . && darm-guard-install-kernel",
+  "postAttachCommand": "echo 'Ready. Try: darm-guard demo   (EVALUATING.md has the rest)'",
+  "customizations": {
+    "codespaces": {
+      "openFiles": ["EVALUATING.md"]
+    }
+  }
+}
