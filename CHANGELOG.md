@@ -4,6 +4,10 @@ Every release of DARM Guard, newest first. Each entry says what changed and, whe
 
 Versions 0.22.0 and earlier were published under the MIT License; later versions under Apache-2.0 (see [NOTICE](NOTICE)).
 
+## 0.24.0
+
+`darm-guard demo`: one command, after installing, runs the broker against an agent in a temporary directory and shows each step: an admitted write and read; refusals for a write without an intent, a path outside the policy even with an intent for it, a traversal, and a proposal that labels itself; an auditor verifying the evidence with the public key alone; an edit outside the broker detected; the audit log's chain intact. It exits non-zero if any step does not behave as described, and runs on every push. No change to the broker or the kernel.
+
 ## 0.23.0
 
 Licensed under Apache-2.0; 0.22.0 and earlier remain MIT. The README is rewritten for evaluators: what DARM Guard is and is not, the broker first, how a request is decided, and each claim with its current evidence and bridge, with figures generated from the repository and checked by CI, and a quick start that CI runs exactly as written. The release history moves to this file; the broker's full design and the earlier APIs move to docs/. SECURITY.md, CITATION.cff and CONTRIBUTING.md (contributions under the DCO) are added, and darm-broker --help describes the current broker and intents. No change to the broker's behaviour or the kernel.
