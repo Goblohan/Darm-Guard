@@ -267,3 +267,6 @@ jobs:
 
       - name: The README's quick start works exactly as written
         run: python tests/readme_quickstart.py
+
+      - name: LIMITATIONS.md states every claim's limitation, generated from the assurance graph
+        run: python scripts/limitations.py --check
