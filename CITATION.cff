@@ -10,7 +10,7 @@ authors:
 repository-code: "https://github.com/Goblohan/Darm-Guard"
 url: "https://pypi.org/project/darm-guard/"
 license: Apache-2.0
-version: "0.25.0"
+version: "0.26.0"
 keywords: ["AI agents", "authorization", "reference monitor", "formal verification", "Lean 4", "assurance"]
 references:
   - type: software
