@@ -1,0 +1,137 @@
+# Earlier APIs
+
+These sections describe the layers DARM Guard grew from: the v0.1 `DARMGuard` (tool-name level) and the v0.3 `KernelGuard` (invocation level, caller-supplied provenance). Both still work. For enforcement, use the broker described in the [README](../README.md): it holds the tools, assigns provenance itself, and executes only what the kernel admits.
+
+The text below is carried over unchanged from earlier READMEs, so version and module names in it (K1, K4, kernel-v0.2.0) describe those releases. The current kernel and evidence are in the README and [CHANGELOG](../CHANGELOG.md).
+
+## Quick Start
+
+    from darm_guard import DARMGuard, Policy, Credential
+
+    guard = DARMGuard(
+        policy=Policy(authorized_tools=frozenset(["file_read", "web_search"])),
+        credential=Credential(tools=frozenset(["file_read"])),
+    )
+
+    guard.check({"file_read"})   # admitted, within credential
+    guard.check({"code_exec"})   # admitted in OBSERVE mode, but reported
+
+
+## Kernel-backed guard (v0.3, recommended)
+
+KernelGuard checks the tool, its arguments, and where each argument came from. Every allow/deny decision is computed by the DARM decision kernel: a Lean 4 function with machine-checked properties (darm-monitor K4RoleKernel, which decides exactly as K1DecisionKernel on policies without payload rules), compiled to a native binary (K4DecisionServer). The Python side only formats requests.
+
+    from darm_guard import KernelGuard, KernelPolicy, ToolRule, ArgRule
+
+    policy = KernelPolicy(tools=(
+        ToolRule("file_read", (ArgRule("path", allowed_prefixes=("/workspace/",)),)),
+    ))
+    guard = KernelGuard(policy, tools={"file_read"},
+                        default_provenance="untrusted",
+                        kernel_path="/path/to/darmkernel")
+
+    guard.check("file_read", {"path": "/workspace/notes.txt"},
+                provenance={"path": "authoritative"})         # admitted
+    guard.check("file_read", {"path": "/etc/passwd"},
+                provenance={"path": "authoritative"})         # rejected: semantic
+    guard.check("file_read", {"path": "/workspace/notes.txt"})  # rejected: provenance
+
+Proved about the kernel's decision function: an admitted invocation passed all five checks, and an expired credential, a tool outside the credential, or any untrusted argument value can never be admitted.
+
+**Install the kernel.** After pip install darm-guard, run darm-guard-install-kernel. It downloads the kernel binary that darm-monitor's CI built from tag kernel-v0.2.0 and installs it only if its SHA-256 matches the value pinned in this package. Linux x86_64 only; elsewhere, build it with lake build darmkernel and set DARM_KERNEL_PATH. Kernels are never downloaded during an authorization check.
+
+**Limits.** Not proved: this Python module, JSON encoding, argument-to-string conversion, expiry computation, the kernel's JSON parser and I/O loop, and the Lean compiler. The guard fails closed if the kernel is missing, crashes, or times out. Provenance labels come from the caller; the guard does not infer lineage.
+
+
+## Three Modes
+
+**OBSERVE (default)** -- logs and classifies every call. Never blocks. Prints a warning saying so.
+
+**GOVERN** -- returns a rejection with a typed diagnosis. Your code must honour it.
+
+**ENFORCE** -- as GOVERN, plus an append-only JSON-lines audit file.
+
+    from darm_guard import Mode
+    guard = DARMGuard(policy=p, credential=c, mode=Mode.GOVERN)
+    result = guard.check({"code_exec"})
+    # result.admitted == False
+    # O-failure: code_exec -- not in observation model
+
+
+## Claim strata
+
+Each layer's claim is weaker than the one above it, and none inherits another's.
+
+| Stratum | Established | How | Not inherited |
+|---|---|---|---|
+| S1 Obligations | ODATS necessity, conservation, IC1/R22 correspondence | Lean proofs, CI-audited (darm-monitor) | Anything about a specific implementation |
+| S2 Kernel | kernelDecide's own properties: admission soundness; expired, uncredentialed, or untrusted invocations never admitted | Lean proofs, kernel-checked (K1); correspondence to S1 proved in K3a/K3b: exact agreement with E17's gate, admission-level agreement with E18 ODATS, sound refinement of R22 for every invocation (no false admits; complete on the governed tool) | E15's causal lift (rests on TMC); E18 diagnosis order (kernel T-first, E18 O-first); domain completeness, which the kernel assumes rather than checks |
+| S3 Binary | Built by CI from the tagged, verified commit; SHA-256 pinned in this package; 1,000 of its answers (every outcome, and admitted untrusted payload, at least 10 each) confirmed by Lean's kernel evaluating K4's kernelDecide | Provenance, tests, and kernel-checked differential certificates | Correct compilation in general: certificates cover sampled inputs only; the JSON parser, I/O loop, and Lean compiler remain trusted |
+| S4 Runtime | KernelGuard asks the kernel for every decision and fails closed; the broker holds the tools, assigns provenance itself, and executes only what the kernel admitted | Tests; broker certified against the B3 model and E24's intent gate; CI bypass tests in the reference deployment | For KernelGuard alone: complete mediation, and caller-supplied provenance. For the broker: mediation outside the reference deployment, and config file permissions |
+| S5 World | Nothing | -- | Physical safety: an explicit assumption (TMC), not a result |
+
+
+## What is and is not guaranteed
+
+The full threat model, trusted computing base, and assumption list are in [THREAT_MODEL.md](THREAT_MODEL.md).
+
+The v0.1 DARMGuard API operates at the **tool-name** level, and the notes below apply to it. For argument-level, kernel-computed decisions, use KernelGuard (above). It is grounded in a machine-checked Lean theory, but the Python runtime itself is not formally verified.
+
+**Guaranteed by the runtime:**
+
+- Credentials and policies are immutable once constructed.
+- The delta (requested tools not in the credential) is computed exactly.
+- Decisions are deterministic: the same inputs give the same result.
+- Within one process, every check is appended to the session audit log.
+
+**Proved in Lean about this runtime** (darm-monitor):
+
+- The v0.1.0 decision rule is formalized exactly and proved equivalent to a single inclusion condition (IC1RuntimeSemantics).
+- Because v0.1.x observes only tool names, no authorizer built on its observations can separate a safe call from a forbidden call to the same tool (R22RuntimeImplementationCorrespondence).
+- A runtime that also observes arguments recovers that distinction (R22). This is the specification for v0.2.
+
+**Not guaranteed -- assumed:**
+
+- Complete mediation: calls that bypass the guard are invisible to it.
+- Enforcement: in GOVERN mode the guard returns a decision; it cannot stop code that ignores it.
+- Argument-level or effect-level safety: file_read on any path is treated the same.
+- Authorization of credential expansion: update_credential is not access-controlled.
+- Freshness at execution time: expiry is checked when check() runs, not when the tool runs.
+- Session state across processes or restarts.
+- The D (domain) and S (semantic) conditions: classified in the theory, not enforced at runtime.
+
+
+## ODATS Diagnosis
+
+| Code | Condition | v0.1.x runtime |
+|------|-----------|----------------|
+| O | Observation -- tool unknown to the policy | enforced |
+| D | Domain completeness | not enforced |
+| A | Authority -- tool known but not authorized | enforced |
+| T | Temporal freshness -- credential expired | enforced at check time |
+| S | Semantic boundary | not enforced |
+
+Each condition is proved independently necessary in the Lean theory: removing any one admits a countermodel.
+
+
+## Session Scope Tracking
+
+Tracks cumulative scope across a session, within one process.
+
+    guard.check({"file_read"})
+    guard.check({"web_search"})
+    print(guard.scope())   # cumulative scope and drift
+
+
+## Temporal Freshness
+
+    from datetime import datetime, timedelta
+    cred = Credential(tools=frozenset(["file_read"]),
+                      issued_at=datetime(2026, 9, 1), ttl=timedelta(hours=4))
+
+
+## LangChain Integration
+
+    from darm_guard.integrations import guard_tools
+    guarded = guard_tools(agent.tools, guard=my_guard)
+

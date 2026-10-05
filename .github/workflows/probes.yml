@@ -261,3 +261,6 @@ jobs:
 
       - name: The effect-surface gate rejects unreviewed changes (eleven attacks rejected, two controls pass)
         run: python tests/gate_attacks.py
+
+      - name: The README's evidence table matches the repository
+        run: python scripts/readme_figures.py --check
