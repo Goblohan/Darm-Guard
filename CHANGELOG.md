@@ -4,6 +4,10 @@ Every release of DARM Guard, newest first. Each entry says what changed and, whe
 
 Versions 0.22.0 and earlier were published under the MIT License; later versions under Apache-2.0 (see [NOTICE](NOTICE)).
 
+## 0.27.0
+
+A fix. The kernel matches a policy prefix as a string, while the file system and the HTTP client read paths and URLs by components, so a prefix that ended inside a component also admitted its siblings: a policy allowing `/workspace/reports` also allowed writes to `/workspace/reports-private/`, and one allowing `https://127.0.0.1` also allowed requests to `https://127.0.0.10/`. Registry patterns had the same problem. It took a principal writing such a prefix, and nothing warned them. The broker now refuses, when the configuration loads, any path or URL prefix in the policy or the registry that does not end at a component boundary, and says what it would also have admitted. Configurations whose prefixes end in `/`, including every example in this repository, are unaffected. Credential prefixes for `http_get` were already checked, so no credential was ever attached to a host the principal did not name.
+
 ## 0.26.0
 
 The evidence, read back. `darm-guard audit` checks a broker's evidence as an outside auditor would: the audit log's hash chain, then every governed file against the log, with the public key alone; it changes nothing and exits non-zero on any finding. `darm-guard report` lists every request the agent made, admitted or refused, with its path or URL, the decision and the reason. To make that possible, the log's decision, duplicate and prepared records now keep a summary of each proposal: paths and URLs verbatim, any other value, such as a file's content, only as its SHA-256 and length, and any extra field an agent sends named. Evaluation without installing anything: a Codespaces configuration, and the deployment's container image, published as ghcr.io/goblohan/darm-guard only after the demo runs inside it. EVALUATING.md gains both commands and a troubleshooting section.
