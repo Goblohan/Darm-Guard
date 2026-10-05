@@ -9,7 +9,8 @@ dependencies = ["cryptography>=42"]
 description = "Agent tool-authorization guard grounded in a machine-checked Lean 4 theory"
 authors = [{name = "Olusanya Gbolahan V"}]
 requires-python = ">=3.9"
-license = "MIT"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 readme = "README.md"
 keywords = ["ai-safety", "agent-governance", "formal-verification"]
 
