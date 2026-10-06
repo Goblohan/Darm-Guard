@@ -100,7 +100,7 @@ Or, as one command each:
 
 `audit` checks the chain and every governed file with the public key alone, and exits non-zero on any finding.
 `report` lists every request the agent made, admitted or refused, with its path or URL, the decision and the
-reason. The log keeps paths and URLs, but a file's content only as its hash and length, and never a credential.
+reason. The log keeps paths and URLs, but a file's content only as its hash and length, and filters exact configured credential-value echoes from returned redirect locations. Encoded or transformed disclosures are outside this filter's guarantee.
 `darm-guard demo --keep` prints both commands for its own directory.
 
 ## 5. Check the claims, not only the behaviour

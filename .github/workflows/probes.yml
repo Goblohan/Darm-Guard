@@ -7,7 +7,12 @@ name: Adversarial probes (gate)
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 defaults:
   run:
@@ -259,7 +264,7 @@ jobs:
           ./tests/setup_demo.sh
           python tests/kernel_reply_binding.py
 
-      - name: The effect-surface gate rejects unreviewed changes (eleven attacks rejected, two controls pass)
+      - name: The effect-surface gate rejects unreviewed changes, including structural indentation
         run: python tests/gate_attacks.py
 
       - name: The README's evidence table matches the repository
@@ -283,7 +288,7 @@ jobs:
       - name: "Governed GET: URL normal form, addresses, credentials, redirects, limits"
         run: python tests/http_get_unit.py
 
-      - name: "Governed GET through the broker: decided, recorded, fetched, credential never returned"
+      - name: "Governed GET through the broker: literal echo filtering and uncertain-send settlement"
         run: python tests/http_get_broker.py
 
       - name: Every workflow file is valid YAML, so GitHub runs it at all

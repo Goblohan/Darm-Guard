@@ -22,7 +22,7 @@ agent ── {tool, args} ──▶ DARM broker ── proposal + nonce ──�
 - **a sandbox.** It assumes complete mediation: the agent reaches governed files only through the broker. A deployment has to provide that, for example with a container or kernel-level enforcement. The reference deployment is tested in CI.
 - **a content filter.** A file's content must satisfy its policy rule, but is not checked for truth, harm or sensitive data. Information flow is out of scope.
 - **proved end to end.** The decision path is the model compiled, with theorems covering the replies the broker accepts. The Python broker's correspondence to the model is tested, and each claim says which (below).
-- **general purpose yet.** It governs a filesystem domain (`read_file`, `list_dir`, `write_file`, `delete_file`, `rename_file`) and one network tool, `http_get`: a `GET` to a URL the principal registered, with the principal's credential attached by the broker and never seen by the agent.
+- **general purpose yet.** It governs a filesystem domain (`read_file`, `list_dir`, `write_file`, `delete_file`, `rename_file`) and one network tool, `http_get`: a `GET` to a URL the principal registered, with the principal's credential attached by the broker. Exact configured credential-value echoes are filtered from returned text fields; a service can still disclose encoded or transformed secrets.
 
 ## Evidence
 
@@ -121,7 +121,7 @@ Apple Silicon Mac, Docker runs it under emulation.
 | A keyed retry performs at most one effect | B7b, `at_most_once_with_failures` | tested |
 | A rename never loses or duplicates a file, across a crash | B8, B9; recovery rolls forward only on a signed attestation for that request | tested |
 | No governed effect bypasses the kernel's decision | every effect site classified and bound to the code it was reviewed against (E34); the build fails on an unreviewed change | tested |
-| An HTTP request goes only to a URL the principal registered, and the agent never holds its credential | URL normal form before the decision; private and metadata addresses refused; the URL recorded before the call; the response is the broker's attestation, the remote state is not (E31) | tested |
+| An HTTP request goes only to a URL the principal registered, with broker-held credentials and literal echo filtering | URL normal form before the decision; private and metadata addresses refused; the URL recorded before the call; the response is the broker's attestation, the remote state is not (E31) | tested |
 | Evidence is checkable with public keys alone | Ed25519 attestations and signed checkpoints | tested, not modelled |
 
 The full list, with every assumption, is in [THREAT_MODEL.md](THREAT_MODEL.md).

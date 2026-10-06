@@ -1,6 +1,7 @@
 """http_get through the broker, end to end: proposal, URL normal form, provenance, the kernel,
 intents, the log, the network and back, against a local TLS server. Predictions first."""
 import json, os, ssl, subprocess, sys, tempfile, threading, time
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import darm_guard.broker as B
@@ -17,19 +18,29 @@ subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-da
                 "-out", cert, "-subj", "/CN=localhost", "-addext", "subjectAltName=IP:127.0.0.1,DNS:localhost"],
                check=True, capture_output=True)
 received = []
+send_boundary_received = threading.Event()
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
     def do_GET(self):
         received.append((self.path, self.headers.get("Authorization")))
+        if self.path == "/api/send-boundary":
+            send_boundary_received.set()
+            return
         if self.path == "/api/slow":
             time.sleep(3)
         if self.path == "/api/redirect":
             self.send_response(302); self.send_header("Location", "https://elsewhere.example/"); self.end_headers(); return
+        if self.path == "/api/echo-location":
+            self.send_response(302)
+            self.send_header("Location", "https://elsewhere.example/?echo=" + self.headers.get("Authorization", ""))
+            self.end_headers()
+            return
         body = ("token was " + str(self.headers.get("Authorization"))).encode() if self.path == "/api/echo" \
             else b'{"status": "ok"}'
-        self.send_response(200); self.send_header("Content-Type", "application/json")
+        self.send_response(200)
+        self.send_header("Content-Type", self.headers.get("Authorization", "") if self.path == "/api/echo-type" else "application/json")
         self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
 srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -59,6 +70,10 @@ check("nothing the agent receives contains the credential", "s3cr3t" in json.dum
 check("the server's certificate is on record in the response", len(r.get("server", {}).get("cert_sha256", "")), 64)
 r = get(base + "/api/echo")
 check("a credential the server echoes is withheld from the agent", ("s3cr3t" in json.dumps(r), "withheld" in r.get("body", "")), (False, True))
+for path, field in (("/api/echo-location", "location"), ("/api/echo-type", "content_type")):
+    r = get(base + path)
+    check("literal header echo withheld through broker: " + field,
+          ("s3cr3t" in json.dumps(r), "withheld" in r.get(field, "")), (False, True))
 n = len(received)
 for label, url in (("an unregistered URL", base + "/admin/keys"),
                    ("a dot segment climbing out of /api/", base + "/api/../admin"),
@@ -82,7 +97,7 @@ log = open(audit).read()
 entries = [json.loads(l) for l in log.splitlines() if l.strip()]
 prep = [e for e in entries if e["event"] == "prepared" and e.get("tool") == "http_get"]
 outc = [e for e in entries if e["event"] == "outcome" and e.get("tool") == "http_get"]
-check("each of the 4 admitted calls had its URL recorded before it was sent", (len(prep), all(e.get("url", "").startswith(base) for e in prep)), (4, True))
+check("each of the 6 admitted calls had its URL recorded before it was sent", (len(prep), all(e.get("url", "").startswith(base) for e in prep)), (6, True))
 check("each outcome records status, body hash and server, not the body",
       (outc[0]["remote"]["status"], len(outc[0]["remote"]["body_sha256"]), "body" in outc[0]["remote"]), (200, 64, False))
 check("the credential appears nowhere in the log", "s3cr3t" in log, False)
@@ -93,6 +108,27 @@ ib = B.Broker(cfg, KernelClient(), B.AuditLog(os.path.join(d, "audit2.jsonl")), 
 r1 = ib.handle({"tool": "http_get", "args": [["url", base + "/api/status"]]})
 r2 = ib.handle({"tool": "http_get", "args": [["url", base + "/api/status"]]})
 check("an intent for one exact URL authorizes one call", (r1.get("effect"), r2.get("failure")), ("succeeded", "intent"))
+
+# The remote receives the request, but the transport reports an exception at
+# the send boundary. Keep the intent reserved and refuse a keyed retransmission.
+uncertain_url = base + "/api/send-boundary"
+uncertain_intents = os.path.join(d, "uncertain-intents.txt")
+open(uncertain_intents, "w").write(f"http_get url={uncertain_url}\n")
+ub = B.Broker(cfg, KernelClient(), B.AuditLog(os.path.join(d, "uncertain.jsonl")),
+              B.load_intents(uncertain_intents), uncertain_intents)
+real_endheaders = B.http_get.http.client.HTTPConnection.endheaders
+def sent_then_error(conn, *args, **kwargs):
+    real_endheaders(conn, *args, **kwargs)
+    raise OSError("injected error after send")
+proposal = {"tool": "http_get", "args": [["url", uncertain_url]], "idempotency_key": "send-error"}
+with patch.object(B.http_get.http.client.HTTPConnection, "endheaders", sent_then_error):
+    uncertain = ub.handle(proposal)
+check("post-send error: remote received it, effect unknown, intent reserved",
+      (send_boundary_received.wait(2), uncertain.get("effect"), bool(ub._reserved)), (True, "unknown", True))
+retry = ub.handle(proposal)
+check("ambiguous send: keyed retry does not send again",
+      (retry.get("effect"), "unresolved" in retry.get("error", ""),
+       sum(path == "/api/send-boundary" for path, _ in received)), ("none", True, 1))
 srv.shutdown()
 print(f"\n{sum(results)}/{len(results)} predictions confirmed")
 sys.exit(0 if all(results) else 1)

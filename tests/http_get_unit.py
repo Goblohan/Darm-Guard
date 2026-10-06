@@ -1,6 +1,7 @@
 """Governed GET, its network side: URL normal form, address checks and the fetch itself,
 against a local TLS server the test starts. Predictions first; no internet needed."""
 import json, os, socket, ssl, subprocess, sys, tempfile, threading, time
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from darm_guard import http_get as H
@@ -62,19 +63,29 @@ subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-da
                 "-out", cert, "-subj", "/CN=localhost", "-addext", "subjectAltName=IP:127.0.0.1,DNS:localhost"],
                check=True, capture_output=True)
 received = []
+send_boundary_received = threading.Event()
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
     def do_GET(self):
         received.append((self.path, self.headers.get("Authorization")))
+        if self.path == "/send-boundary":
+            send_boundary_received.set()
+            return
         if self.path == "/slow":
             time.sleep(3)
         if self.path == "/redirect":
             self.send_response(302); self.send_header("Location", "https://elsewhere.example/"); self.end_headers(); return
+        if self.path == "/echo-location":
+            self.send_response(302)
+            self.send_header("Location", "https://elsewhere.example/?echo=" + self.headers.get("Authorization", ""))
+            self.end_headers()
+            return
         body = {"/ok": b'{"status": "ok"}', "/echo": ("you sent " + str(self.headers.get("Authorization"))).encode(),
                 "/big": b"x" * 5000}.get(self.path, b"?")
-        self.send_response(200); self.send_header("Content-Type", "application/json")
+        self.send_response(200)
+        self.send_header("Content-Type", self.headers.get("Authorization", "") if self.path == "/echo-type" else "application/json")
         self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
 srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -100,6 +111,26 @@ r = H.fetch(base + "/redirect", **kw)
 check("a redirect is returned, not followed",
       (r.get("status"), r.get("location"), [p for p, _ in received].count("/redirect")),
       (302, "https://elsewhere.example/", 1))
+for path, field in (("/echo-location", "location"), ("/echo-type", "content_type")):
+    r = H.fetch(base + path, **kw)
+    check("literal credential echo withheld in " + field,
+          ("s3cr3t" in json.dumps(r), H.WITHHELD in r.get(field, "")), (False, True))
+
+# Inject a failure after the real send returned. This establishes that the server
+# can receive a request even though the caller observes an exception from endheaders.
+real_endheaders = H.http.client.HTTPConnection.endheaders
+def sent_then_error(conn, *args, **kwargs):
+    real_endheaders(conn, *args, **kwargs)
+    raise OSError("injected error after send")
+with patch.object(H.http.client.HTTPConnection, "endheaders", sent_then_error):
+    r = H.fetch(base + "/send-boundary", **kw)
+check("an exception at the send boundary is unknown, never proof of non-delivery",
+      (send_boundary_received.wait(2), r["outcome"]), (True, "unknown"))
+
+# A local header-validation error precedes any transmission and remains failed.
+with patch.object(H.http.client.HTTPConnection, "putheader", side_effect=ValueError("invalid header")):
+    r = H.fetch(base + "/ok", **kw)
+check("a pre-send validation failure remains failed", r["outcome"], "failed")
 r = H.fetch(base + "/big", **dict(kw, max_body=1000))
 check("a body over the limit is truncated, and says so", (len(r.get("body", "")), r.get("truncated")), (1000, True))
 n = len(received)

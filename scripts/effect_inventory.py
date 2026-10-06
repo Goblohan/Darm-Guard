@@ -5,8 +5,8 @@ Every call that can change the world, resolved through import aliases
 (import os as x; from os import unlink as y), and every reference to an effect
 function that is not a direct call (bound to a name, passed along, or reached
 through getattr on a module): those are sites too, and must be classified.
-For each function, a fingerprint of its tokens (formatting and comments
-ignored, stable across Python versions); for each effect function, every
+For each function, a fingerprint of its typed tokens (comments and indentation
+width ignored, but suite boundaries and logical newlines retained); for each effect function, every
 function from which it can be reached, each with its fingerprint, so a verdict
 is bound to the code it was reviewed against. v3: a verdict's cone runs in both directions: every function
 on a route into the effect function (calls and references, such as a thread
@@ -32,13 +32,16 @@ NET_EFFECTS = {"socket": {"socket", "create_connection", "create_server", "socke
 WRITE_FLAGS = ("O_WRONLY", "O_RDWR", "O_CREAT", "O_TRUNC", "O_APPEND")
 MODULES = {"os", "shutil", "subprocess"} | set(NET_EFFECTS)
 DYNAMIC = {"eval", "exec", "compile", "__import__"}
-SKIP = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT,
-        tokenize.ENCODING, tokenize.ENDMARKER}
+SKIP = {tokenize.COMMENT, tokenize.NL, tokenize.ENCODING, tokenize.ENDMARKER}
+STRUCTURE = {tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT}
 
 def token_fp(text):
-    toks = [t.string for t in tokenize.generate_tokens(io.StringIO(textwrap.dedent(text)).readline)
+    # Indentation is executable structure in Python. Normalize its width, not
+    # its presence. Token types also distinguish structural markers from text.
+    toks = [(tokenize.tok_name[t.type], "" if t.type in STRUCTURE else t.string)
+            for t in tokenize.generate_tokens(io.StringIO(textwrap.dedent(text)).readline)
             if t.type not in SKIP]
-    return hashlib.sha256("\x00".join(toks).encode()).hexdigest()[:16]
+    return hashlib.sha256(json.dumps(toks, separators=(",", ":")).encode()).hexdigest()
 
 def is_effect(mod, name):
     return (mod == "os" and name in OS_EFFECTS) or (mod == "shutil" and name in SHUTIL_EFFECTS) \

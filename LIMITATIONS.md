@@ -96,7 +96,7 @@ A defense layered with DARM Guard backs it up only in a dimension it also checks
 No governed effect happens without a K6 admission for its request: every effect site in the broker is classified as closed (it executes the kernel's invocation for this request), a continuation of an admitted transition, or outside the governed workspace, and the build fails on any site that is new, changed or unclassified.
 
 - **Bridge:** tested
-- **Limitation:** An audit kept true by a gate, not a proof. By darm-monitor E34 the claim holds for every version the build accepts, provided: each --accept follows a correct review; the inventory sees every dependency that static analysis of the package can see (not monkeypatching from outside the package, nor behavior below Python); equal fingerprints mean equal code; and equal code behaves equally in the same environment. That the cones are local is shown by design, by the manifest pinning the analysis's own output, and by attack, not proved. It also rests on the signing key's secrecy, on only the broker writing the log's unprotected tail, and on fresh nonces (K7).
+- **Limitation:** An audit kept true by a gate, not a proof. By darm-monitor E34 the claim holds for every version the build accepts, provided: each --accept follows a correct review; the inventory sees every dependency that static analysis of the package can see (not monkeypatching from outside the package, nor behavior below Python); equal fingerprints mean equal code; and equal code behaves equally in the same environment. That the cones are local is shown by design, by the manifest pinning the analysis's own output, and by attack, not proved. It also rests on the signing key's secrecy, on only the broker writing the log's unprotected tail, and on fresh nonces (K7). The current inventory scans top-level package Python modules; nested packages and dependencies outside that scan are not covered. Structural fingerprinting preserves Python suite boundaries but is not a semantic equivalence proof.
 
 ### `evidence-before-effect`
 
@@ -114,10 +114,10 @@ A file consistently attested (rid, d) was put at its path by a broker operation 
 
 ### `governed-get`
 
-An http_get reaches the network only for a URL the kernel admits, in URL normal form, at an address the principal allows; the agent never receives the principal's credential; and every call is recorded before it is sent, with what came back.
+An http_get reaches the network only for a URL the kernel admits, in URL normal form, at an address the principal allows; credentials are attached by the broker, and exact configured credential-value echoes are withheld from returned body text, Content-Type, Location and pre-send error text; every call is recorded before transmission is attempted.
 
 - **Bridge:** tested
-- **Limitation:** The response is the broker's attestation: TLS does not make it provable to a third party, and the remote system's state is not attested. Data the agent places in an allowed URL reaches that host. URL normal form is checked by the broker before the decision: tested, not proved, since the kernel checks normal form for paths only. GET only, with no headers or body from the agent.
+- **Limitation:** The response is the broker's attestation: TLS does not make it provable to a third party, and the remote system's state is not attested. Data the agent places in an allowed URL reaches that host. URL normal form is checked by the broker before the decision: tested, not proved, since the kernel checks normal form for paths only. GET only, with no headers or body from the agent. Credential filtering is literal, not information-flow security: a credential-bearing service can disclose partial, encoded or transformed secrets. The body hash describes the received bytes before redaction. Once sending may have begun, a transport error is unknown rather than proof of non-delivery.
 - **Trusted:** the TLS library's certificate verification; the system resolver; the secrecy of the principal's credential files
 
 ### `input-coverage-limit`

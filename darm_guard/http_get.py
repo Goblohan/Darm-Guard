@@ -15,7 +15,8 @@ module never decides whether a call is allowed. It provides:
   never follows a redirect, bounds the body and the time, and records the server's
   certificate. Outcomes: failed (nothing was sent), succeeded (a response arrived),
   unknown (sent, but no complete answer: what the remote did is unknowable, E31).
-- A credential the remote echoes back is withheld from what the agent receives.
+- Exact credential-value echoes in returned text fields are replaced. Encoded,
+  partial or transformed disclosures by the remote service are not prevented.
 """
 import hashlib, http.client, ipaddress, re, socket, ssl, urllib.parse
 
@@ -107,7 +108,7 @@ def address_refused(ip: str, host: str, allow_private) -> str:
 
 def credential_for(url: str, credentials) -> tuple:
     """The principal's credential for the longest matching URL prefix: (header, value) or None.
-    The value is read from its file at the time of the call and never returned to the agent."""
+    The value is read from its file at the time of the call, not exposed as configuration."""
     best = None
     for c in credentials or ():
         if url.startswith(c["prefix"]) and (best is None or len(c["prefix"]) > len(best["prefix"])):
@@ -116,6 +117,13 @@ def credential_for(url: str, credentials) -> tuple:
         return None
     with open(best["value_file"]) as f:
         return best["header"], f.read().strip()
+
+
+def _withhold(text: str, credential) -> str:
+    """Filter the exact configured value, not arbitrary encodings or secret parts."""
+    if credential and credential[1]:
+        return text.replace(credential[1], WITHHELD)
+    return text
 
 
 def fetch(url: str, *, credentials=None, allow_private=None, resolver=socket.getaddrinfo,
@@ -161,28 +169,28 @@ def fetch(url: str, *, credentials=None, allow_private=None, resolver=socket.get
         conn.putheader("Connection", "close")
         if cred:
             conn.putheader(cred[0], cred[1])
-        conn.endheaders()
+        # endheaders may transmit before raising. From this point a failure is
+        # ambiguous, even when the send call never returns successfully.
         sent = True
+        conn.endheaders()
         resp = conn.getresponse()
         body = resp.read(max_body + 1)
         truncated = len(body) > max_body
         body = body[:max_body]
-        text = body.decode("utf-8", errors="replace")
-        if cred and cred[1] and cred[1] in text:
-            text = text.replace(cred[1], WITHHELD)   # an echoed credential never reaches the agent
+        text = _withhold(body.decode("utf-8", errors="replace"), cred)
         result = dict(out, outcome="succeeded", status=resp.status,
-                      content_type=resp.getheader("Content-Type", ""),
+                      content_type=_withhold(resp.getheader("Content-Type", ""), cred),
                       body=text, body_sha256=hashlib.sha256(body).hexdigest(),
                       truncated=truncated, server=server)
         if 300 <= resp.status < 400:
-            result["location"] = resp.getheader("Location", "")
+            result["location"] = _withhold(resp.getheader("Location", ""), cred)
             result["redirect"] = "not followed; propose the location as a new request to fetch it"
         return result
     except Exception as e:
         if not sent:
-            return dict(out, error=f"not sent: {e}", server=server)
+            return dict(out, error=_withhold(f"not sent: {e}", cred), server=server)
         return dict(out, outcome="unknown", server=server,
-                    error=f"sent, but no complete answer ({type(e).__name__}): what the remote did is unknown")
+                    error=f"transmission may have begun, but no complete answer ({type(e).__name__}): what the remote did is unknown")
     finally:
         try:
             conn.close()

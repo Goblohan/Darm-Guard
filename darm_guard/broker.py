@@ -892,8 +892,9 @@ def _execute(cfg: BrokerConfig, inv: dict, expected=None, attest=None,
 
 def _execute_http(cfg: BrokerConfig, args: dict) -> dict:
     """http_get, admitted and recorded: GET exactly the decided URL. The principal's
-    credential is attached here and never returned; redirects are reported, not
-    followed; a call sent without a complete answer is unknown, not failed (E31)."""
+    credential is attached here; exact-value echoes are filtered by http_get.
+    Redirects are reported, not followed; a possibly sent call without a complete
+    answer is unknown, not failed (E31)."""
     h = cfg.http or {}
     r = http_get.fetch(args.get("url", ""), credentials=h.get("credentials"),
                        allow_private=h.get("allow_private"), cafile=h.get("cafile"),
@@ -1220,7 +1221,7 @@ class Broker:
             **result,
         )
         if tool == "http_get":
-            # what the log keeps of a remote call: never the body, never the credential
+            # No response body; Location has literal credential-value echoes filtered.
             response_fields["remote"] = {k: result.get(k) for k in
                                          ("status", "body_sha256", "truncated", "server", "location")}
 
