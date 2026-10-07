@@ -1,0 +1,4 @@
+write_file path=/workspace/reports/hello.md content_sha256=4a79685a6bf9d8724089cdccc663a49d5968ffd1b699cca46494c0c02602e274
+read_file path=/workspace/reports/hello.md
+read_file path=/workspace/invented.txt
+http_get url=https://api.internal:8443/v1/status

@@ -12,7 +12,7 @@ COPY --chown=darm:darm . /home/darm/src
 RUN pip install --user --no-cache-dir /home/darm/src && darm-guard-install-kernel
 COPY --chown=darm:darm deploy/fixture/ /data/
 RUN mkdir -p /data/workspace/reports /data/secrets && echo "hello from notes" > /data/workspace/notes.txt \
- && echo "Bearer deployment-demo-token" > /data/secrets/api-token && chmod 600 /data/secrets/api-token
+ && echo "Bearer deployment-demo-token" > /data/secrets/api-token && chmod 600 /data/secrets/api-token /data/intents.txt
 HEALTHCHECK --interval=1s --timeout=2s --retries=90 CMD test -S /sock/broker.sock
 CMD ["darm-broker", "--config", "/data/config.json", "--registry", "/data/registry.txt", \
-     "--socket", "/sock/broker.sock", "--audit", "/data/audit.jsonl"]
+     "--socket", "/sock/broker.sock", "--audit", "/data/audit.jsonl", "--intents", "/data/intents.txt"]
