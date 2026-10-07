@@ -40,7 +40,7 @@ services:
     read_only: true
     user: "1000:1000"
     volumes:
-      - sock:/sock
+      - sock:/sock:ro
       - ./agent.py:/agent.py:ro
     command: ["python", "/agent.py"]
 volumes:

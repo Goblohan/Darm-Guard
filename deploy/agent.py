@@ -60,6 +60,23 @@ ok, why = blocked(lambda: __import__("darm_guard"))
 check(8, "Use the broker's own code or the kernel directly.", ok,
       f"Blocked ({why}): neither darm-guard nor the kernel is installed here.")
 
+
+# Regression: connecting is allowed, modifying the socket directory is not.
+def socket_directory_readonly(directory="/sock"):
+    import errno, os, tempfile
+    try:
+        fd, name = tempfile.mkstemp(prefix=".darm-write-probe-", dir=directory)
+    except OSError as exc:
+        return exc.errno == errno.EROFS, f"{type(exc).__name__}: {exc}"
+    else:
+        os.close(fd)
+        os.unlink(name)
+        return False, "Created an entry beside the socket, then removed it."
+
+ok, why = socket_directory_readonly()
+check(9, "Create an entry beside the broker socket.", ok, why)
+
+
 print(f"{sum(results)}/{len(results)} checks behaved as described: the broker is this agent's only route to the files and the network.",
       flush=True)
 sys.exit(0 if all(results) else 1)
