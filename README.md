@@ -16,6 +16,8 @@ not claim universal agent safety.
 
 - [Run the evaluation](EVALUATING.md)
 - [Read the evaluator overview](docs/evaluator-overview.md)
+- [Install from PyPI](https://pypi.org/project/darm-guard/)
+- [Download source at v0.28.0](https://github.com/Goblohan/Darm-Guard/tree/v0.28.0)
 - [Read the formal backing](FORMAL_BACKING.md)
 - [Read the threat model](THREAT_MODEL.md)
 - [Read the limitations](LIMITATIONS.md)
@@ -51,7 +53,7 @@ agent ── {tool, args} ──▶ DARM broker ── proposal + nonce ──�
 | Bridges from model to code | 1 construction, 1 proved, 29 tested, 0 assumed |
 | Effect sites | 53 found, 53 classified (13 closed, 7 continuation, 33 exception, 0 open) |
 | Mutations, each caught by a test | 19 |
-| Gate steps run on every push | 64 |
+| Gate steps in full validation | 64 |
 <!-- figures:end -->
 
 Every claim in [`assurance/claims.json`](assurance/claims.json) names its theorems in darm-monitor, its tests, and its **bridge** to the code: by construction, proved, tested, or assumed. `scripts/check_assurance.py` checks every claim against the theorems and the threat model in both directions on each build, and `scripts/mutation_gate.py` breaks each load-bearing check to show a test catches it. The table above is generated from the repository by `scripts/readme_figures.py`, and CI fails if it falls out of date.
@@ -119,8 +121,9 @@ for it to finish setting up, and run `darm-guard demo` in its terminal. With Doc
 
     docker run --rm ghcr.io/goblohan/darm-guard darm-guard demo
 
-The image is the one the deployment below uses. Each release builds it and runs the demo inside it before
-publishing it, and every push to this repository builds it and runs the demo too.
+The image is the one the deployment below uses. Each release tag builds it, runs the demo inside it,
+and publishes it to GitHub Container Registry. The mediation workflow also builds and runs the image
+demo on every push to `main`.
 
 ## Try it in Docker, on any OS
 
@@ -130,7 +133,7 @@ workspace and no darm-guard: its only channel is the broker's socket. From a clo
     docker compose -f deploy/compose.yaml up --build --abort-on-container-exit --exit-code-from agent
 
 The agent uses the broker, for files and for an API whose token only the broker holds, then tries every way around it, and says what happened. This is the evidence for
-complete mediation in this deployment, and CI runs it on every push. The broker image is `linux/amd64`; on an
+complete mediation in this deployment, and CI runs it on every push to `main`. The broker image is `linux/amd64`; on an
 Apple Silicon Mac, Docker runs it under emulation.
 
 ## How a request is decided
@@ -220,7 +223,7 @@ Every claim's own limitation, with what all of them assume, is in [LIMITATIONS.m
 
 ## License
 
-Apache License 2.0 from the next release: see [LICENSE](LICENSE) and [NOTICE](NOTICE). Versions 0.22.0 and earlier were published under the MIT License, and remain so. Contributions are accepted under the [Developer Certificate of Origin](CONTRIBUTING.md). The names DARM, DARM Guard and PerceptraAI are not licensed under it (Apache-2.0, section 6).
+Apache License 2.0: see [LICENSE](LICENSE) and [NOTICE](NOTICE). Versions 0.22.0 and earlier were published under the MIT License, and remain so. Contributions are accepted under the [Developer Certificate of Origin](CONTRIBUTING.md). The names DARM, DARM Guard and PerceptraAI are not licensed under it (Apache-2.0, section 6).
 
 ---
 

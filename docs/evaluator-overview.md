@@ -13,6 +13,9 @@ inspectable.
 
 The current stable repository line is package version `0.28.0`.
 
+- [Install from PyPI](https://pypi.org/project/darm-guard/)
+- [Download source at v0.28.0](https://github.com/Goblohan/Darm-Guard/tree/v0.28.0)
+
 The formal model is maintained in the
 [DARM Monitor repository](https://github.com/Goblohan/darm-monitor).
 
