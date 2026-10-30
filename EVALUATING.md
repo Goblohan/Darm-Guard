@@ -1,8 +1,8 @@
 # Evaluating DARM Guard
 
 From nothing to having tried to break it, in about fifteen minutes. Steps 1, 3 and 4 need Linux x86_64 (the
-kernel binary's platform); step 2 needs Docker and runs on any OS. Everything here is also run by CI on every
-push, so if a step does not behave as described, that is a finding: please report it (step 6).
+kernel binary's platform); step 2 needs Docker and runs on any OS. The automated gate runs on every push to `main` and can also be dispatched manually. If a step
+does not behave as described, that is a finding: please report it (step 6).
 
 ## 1. See it work (two minutes)
 

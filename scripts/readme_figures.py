@@ -31,7 +31,7 @@ block = "\n".join([
     f"| Bridges from model to code | {bridges} |",
     f"| Effect sites | {sites} |",
     f"| Mutations, each caught by a test | {mutations} |",
-    f"| Gate steps run on every push | {steps} |",
+    f"| Gate steps in full validation | {steps} |",
     "<!-- figures:end -->"])
 
 readme = open("README.md").read()
