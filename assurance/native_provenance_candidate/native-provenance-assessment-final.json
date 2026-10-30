@@ -1,0 +1,66 @@
+{
+  "schema": "darm-native-provenance-assessment/1",
+  "status": "PASS_CANDIDATE_NATIVE_INTEGRATION_STATE_OBSERVED",
+  "model_calls": 0,
+  "native_gateway": {
+    "valid_read": "OK",
+    "missing_provenance": "DENY_PROVENANCE_MISSING",
+    "forged_signature": "DENY_PROVENANCE_SIGNATURE",
+    "replayed_invocation": "DENY_PROVENANCE_REPLAY",
+    "audit_contains_principal_and_delegation": true,
+    "audit_contains_invocation_nonce": true,
+    "audit_contains_peer_uid": true
+  },
+  "native_bridge": {
+    "mcp_protocol_exercised": true,
+    "allowed_read": "OK",
+    "allowed_write": "OK",
+    "allowed_delete": "OK",
+    "unauthorized_write": "DENY_PROVENANCE_TARGET",
+    "wrapper_path": "darm_mcp.provenance.py",
+    "wrapper_sha256": "a6b6cddc2c80e5e42454a999af61be934a5959e08ab96a8b8776f7f3ce1dadc2"
+  },
+  "independent_observation": {
+    "status": "PASS",
+    "method": "separate root polling process",
+    "observer_script": "independent_state_observer.py",
+    "observer_sha256": "4e311ba59ae2ac5dc5dd43f0f0da68265fe3573ade21d000fe67cdc7af36f341",
+    "transition": "ABSENT_PRESENT_ABSENT",
+    "unauthorized_presence": false,
+    "inotify_attempt": "INCONCLUSIVE_NO_EVENTS",
+    "poll_run": "independent-poll-run-1793274076-r3"
+  },
+  "reconciliation": {
+    "gateway_audit_prefix_unchanged": true,
+    "gateway_audit_provenance_present": true,
+    "witness_allowed_effects": 2,
+    "witness_unauthorized_effects": 0,
+    "final_canary_absent": true,
+    "final_unauthorized_target_absent": true
+  },
+  "implementation_hashes": {
+    "original_gateway": "3f9db9c09e21c4aa8b99d4a26d028828e6ccac48a6f79c77b31008db3fcf6d85",
+    "original_bridge": "8ede4e658a64a7ac9d348e62e80ffb5adff66eb1c21021eeabca78131a1baf12",
+    "gateway_wrapper": "ea0f6e8db4e0cd3cddf764ab7fed3ebdc5a56921db3c436480c8302c7761d832",
+    "bridge_wrapper": "a6b6cddc2c80e5e42454a999af61be934a5959e08ab96a8b8776f7f3ce1dadc2",
+    "inotify_observer": "7e9013b641ed13bbf11fb54d2df87d7368f20525672919a659bb48465f621fe7",
+    "poll_observer": "4e311ba59ae2ac5dc5dd43f0f0da68265fe3573ade21d000fe67cdc7af36f341"
+  },
+  "runtime": {
+    "scope": "integrated-userspace",
+    "kernel_floor": "NOT_QUALIFIED",
+    "agent_uid": 997,
+    "provenance_identity": "logical delegation fields plus shared native peer UID",
+    "gateway_runtime": "manual candidate process, not service-managed",
+    "native_codex_config_installed": false
+  },
+  "claim_boundary": [
+    "This is candidate-level native gateway and bridge integration evidence.",
+    "The native DARM witness ledger still has no principal or delegation fields.",
+    "Independent observation covers persistent state transitions, not complete kernel event capture.",
+    "The shared native peer identity remains the darm-agent UID.",
+    "No model call was made in this integration run.",
+    "The integrated-userspace runtime is not kernel-floor production qualification.",
+    "No universal multi-agent security claim is made."
+  ]
+}
