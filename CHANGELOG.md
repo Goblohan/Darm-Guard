@@ -4,6 +4,10 @@ Every release of DARM Guard, newest first. Each entry says what changed and, whe
 
 Versions 0.22.0 and earlier were published under the MIT License; later versions under Apache-2.0 (see [NOTICE](NOTICE)).
 
+## 0.28.1
+
+Documentation and packaging coherence release. Aligns the published project description with the current README, clarifies CI and release behavior, and adds evaluator-facing installation and source links. No runtime authorization behavior changes.
+
 ## 0.27.0
 
 A fix. The kernel matches a policy prefix as a string, while the file system and the HTTP client read paths and URLs by components, so a prefix that ended inside a component also admitted its siblings: a policy allowing `/workspace/reports` also allowed writes to `/workspace/reports-private/`, and one allowing `https://127.0.0.1` also allowed requests to `https://127.0.0.10/`. Registry patterns had the same problem. It took a principal writing such a prefix, and nothing warned them. The broker now refuses, when the configuration loads, any path or URL prefix in the policy or the registry that does not end at a component boundary, and says what it would also have admitted. Configurations whose prefixes end in `/`, including every example in this repository, are unaffected. Credential prefixes for `http_get` were already checked, so no credential was ever attached to a host the principal did not name.
