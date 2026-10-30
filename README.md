@@ -17,7 +17,7 @@ not claim universal agent safety.
 - [Run the evaluation](EVALUATING.md)
 - [Read the evaluator overview](docs/evaluator-overview.md)
 - [Install from PyPI](https://pypi.org/project/darm-guard/)
-- [Download source at v0.28.0](https://github.com/Goblohan/Darm-Guard/tree/v0.28.0)
+- [Download source at v0.28.1](https://github.com/Goblohan/Darm-Guard/tree/v0.28.1)
 - [Read the formal backing](FORMAL_BACKING.md)
 - [Read the threat model](THREAT_MODEL.md)
 - [Read the limitations](LIMITATIONS.md)
@@ -47,7 +47,7 @@ agent ── {tool, args} ──▶ DARM broker ── proposal + nonce ──�
 <!-- figures:start -->
 | | |
 | --- | --- |
-| Package / kernel | 0.28.0 / kernel-v0.4.0 |
+| Package / kernel | 0.28.1 / kernel-v0.4.0 |
 | Claims, each citing its theorems and tests | 31 |
 | Threat-model guarantees, each backed by a claim | 29 |
 | Bridges from model to code | 1 construction, 1 proved, 29 tested, 0 assumed |

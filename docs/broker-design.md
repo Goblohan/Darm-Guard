@@ -1,6 +1,6 @@
 # Broker design
 
-This page preserves design material from earlier releases. References to kernel-v0.2.0, K4, and the 0.8 hardening profile are historical. For the current 0.28.0 runtime, use the [README](../README.md) and [assurance/claims.json](../assurance/claims.json).
+This page preserves design material from earlier releases. References to kernel-v0.2.0, K4, and the 0.8 hardening profile are historical. For the current 0.28.1 runtime, use the [README](../README.md) and [assurance/claims.json](../assurance/claims.json).
 
 KernelGuard answers "is this authorized?" The broker makes the answer binding. It is a separate process that holds the tools and their credentials; the agent holds only a socket and can only propose. The broker builds one canonical invocation, asks the kernel, and executes that same invocation only if admitted.
 
