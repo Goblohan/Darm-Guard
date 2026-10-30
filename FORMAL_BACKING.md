@@ -10,7 +10,7 @@ whole corpus for sorryAx on every push.
 
 ## ODATS conditions: each proved independently necessary
 
-| Condition | Theorem(s) | File | v0.1.x runtime |
+| Condition | Theorem(s) | File | Current runtime status |
 |-----------|-----------|------|----------------|
 | O Observation | ag_satisfaction_holds, unsafe_causeable_exists | E14AGContractComparison | enforced |
 | D Domain | e15_g5b_e15_obligations_do_not_imply_ag_causeable_coverage | E15CausalCoverageContractEquivalence | not enforced |

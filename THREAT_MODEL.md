@@ -1,4 +1,6 @@
-# DARM Guard: threat model and trusted computing base (0.8.x)
+# DARM Guard: threat model and trusted computing base
+
+Current reference release: `0.28.0`
 
 Every guarantee below rests on stated assumptions, and every assumption has a status: **enforced** (made structural), **witnessed** or **monitored** (violations become visible), or **declared** (still trusted, and said so). Each broker response carries a `basis` naming the theorems and assumptions its own claims rest on; a claim with no theorem behind it says so.
 
