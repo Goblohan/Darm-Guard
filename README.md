@@ -1,10 +1,26 @@
 # DARM Guard
 
-**Runtime authorization for AI agents, decided by a kernel compiled from a machine-checked model.**
+**Runtime authorization and evidence for AI agents.**
 
-An agent proposes tool calls. A broker that holds the tools asks the DARM decision kernel, executes only the invocation the kernel admits, and leaves signed evidence of every effect. The kernel is a Lean 4 model, compiled; its theory is in [darm-monitor](https://github.com/Goblohan/darm-monitor).
+DARM Guard sits between an AI agent and its tools. The agent can propose a
+tool call, but it cannot directly cause the governed effect. A compiled
+decision kernel evaluates the proposal, the broker executes only the admitted
+invocation, and the system records evidence of the decision and resulting
+effect.
 
-*PerceptraAI Lab* · [Evaluating it](EVALUATING.md) · [Limitations](LIMITATIONS.md) · [Threat model](THREAT_MODEL.md) · [Formal backing](FORMAL_BACKING.md) · [Broker design](docs/broker-design.md) · [Changelog](CHANGELOG.md) · [Earlier APIs](docs/legacy-api.md)
+DARM controls the authority-to-effect boundary. It complements model-level
+safeguards, prompt-injection defenses, sandboxing, and human approval. It does
+not claim universal agent safety.
+
+## Start here
+
+- [Run the evaluation](EVALUATING.md)
+- [Read the evaluator overview](docs/evaluator-overview.md)
+- [Read the formal backing](FORMAL_BACKING.md)
+- [Read the threat model](THREAT_MODEL.md)
+- [Read the limitations](LIMITATIONS.md)
+- [Read the broker design](docs/broker-design.md)
+- [Review the native provenance candidate](https://github.com/Goblohan/Darm-Guard/pull/1)
 
 ```
 agent ── {tool, args} ──▶ DARM broker ── proposal + nonce ──▶ darmkernel (the Lean model, compiled)
@@ -39,6 +55,26 @@ agent ── {tool, args} ──▶ DARM broker ── proposal + nonce ──�
 <!-- figures:end -->
 
 Every claim in [`assurance/claims.json`](assurance/claims.json) names its theorems in darm-monitor, its tests, and its **bridge** to the code: by construction, proved, tested, or assumed. `scripts/check_assurance.py` checks every claim against the theorems and the threat model in both directions on each build, and `scripts/mutation_gate.py` breaks each load-bearing check to show a test catches it. The table above is generated from the repository by `scripts/readme_figures.py`, and CI fails if it falls out of date.
+
+
+## Project layers
+
+- **DARM Monitor**: the formal model and machine-checked claims.
+- **DARM Guard**: the executable runtime and broker implementation.
+- **Assurance artifacts**: claim matrices, evaluations, limitations, and
+  reproducible evidence.
+
+## Experimental native multi-agent provenance
+
+The separate candidate PR tests signed delegation, scope restriction, replay
+rejection, provenance-bearing gateway audit records, and independent
+persistent-state observation.
+
+It is candidate-level evidence only. It was tested in an integrated-userspace
+environment and intentionally made zero model calls so that the observed
+behavior could be attributed to the gateway and bridge path.
+
+See [PR #1](https://github.com/Goblohan/Darm-Guard/pull/1).
 
 ## Install
 
