@@ -1,0 +1,21 @@
+{
+  "boundary_verdict": "Q44_P2_FULLTRACE_KERNEL_EXEC_BOUNDARY_CORROBORATED",
+  "case_checks": "36/36",
+  "closed_at_utc": "2026-11-01T00:02:10.491738+00:00",
+  "evidence_locks": {
+    "DARM-E3E1-T6-Q5-Q2-Q4-3-P1-002-evidence-lock-001.tar.gz": "abdcaca19deba360d8917f53f5bb056e9f51203d95ae4d3a634111b9c8f51d4b",
+    "DARM-E3E1-T6-Q5-Q2-Q4-3-P1-002-v2-SUPPLEMENT-evidence-lock-001.tar.gz": "322fa8788cff17dac8127b037ffba0cf4e831b03c6adb278eef03e7059a58abb",
+    "DARM-E3E1-T6-Q5-Q2-Q4-4-P2-evidence-lock-001.tar.gz": "3935dfe966adbc0f9068cc1a8a61262314b7e2aa849c6b4b79cb076d6286edb5"
+  },
+  "global_checks": "12/12",
+  "limitations": [
+    "Complete event history not proven",
+    "Independent kernel witness not established",
+    "Pre-exec transient inheritance not excluded",
+    "No universal deployment guarantee"
+  ],
+  "mutation_rejections": "20/20",
+  "real_kernel_sessions": 2,
+  "schema": "DARM-Q44-P2-CLOSURE-v1",
+  "status": "CLOSED_BOUNDED"
+}

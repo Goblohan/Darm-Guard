@@ -1,0 +1,9 @@
+{
+  "darm_session_executed": false,
+  "host_type": "WSL2",
+  "kernel_release": "6.18.54.1-microsoft-standard-WSL2",
+  "kernel_witness_tested": false,
+  "native_runtime_qualification": "NOT_TESTED",
+  "privileges_modified": false,
+  "schema": "DARM-Q44-P3-HOST-SURVEY-v1"
+}
