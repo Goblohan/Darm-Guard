@@ -1,0 +1,38 @@
+{
+  "external_evidence_archive_sha256": {
+    "DARM-E3E1-T6-Q5-Q2-Q4-3-P1-002-evidence-lock-001.tar.gz": "abdcaca19deba360d8917f53f5bb056e9f51203d95ae4d3a634111b9c8f51d4b",
+    "DARM-E3E1-T6-Q5-Q2-Q4-3-P1-002-v2-SUPPLEMENT-evidence-lock-001.tar.gz": "322fa8788cff17dac8127b037ffba0cf4e831b03c6adb278eef03e7059a58abb",
+    "DARM-E3E1-T6-Q5-Q2-Q4-4-P2-evidence-lock-001.tar.gz": "3935dfe966adbc0f9068cc1a8a61262314b7e2aa849c6b4b79cb076d6286edb5",
+    "DARM-E3E1-T6-Q5-Q2-Q4-4-P3-PREREG-lock-001.tar.gz": "9fb61fa274a2cb60d5ab14f21766573c249154e6833034daf01ae6f37b481582"
+  },
+  "historical_negative_results": [
+    "P2_EVENT_AUDITOR_V1_NOT_QUALIFIED",
+    "P2_MUTATION_SUITE_V1_NOT_QUALIFIED_19_OF_20"
+  ],
+  "limitations": [
+    "No universal FD custody guarantee",
+    "No complete runtime event-history proof",
+    "No independent kernel-level witness",
+    "No end-to-end proof of the Python broker"
+  ],
+  "p2_case_checks_passed": 36,
+  "p2_global_checks_passed": 12,
+  "p2_mutations_rejected": 20,
+  "p2_status": "CLOSED_BOUNDED",
+  "p3_gates_passed": 0,
+  "p3_independent_kernel_witness": false,
+  "p3_status": "PREREGISTERED_NOT_TESTED",
+  "publication_scope": "Q4.3 and Q4.4 P2 evidence, P3 preregistration",
+  "published_file_sha256": {
+    "records/host_survey.json": "e05fd44cf29e6a1607a50551486c6b13a0ac01c1183f35b7e80cc5624dced7ba",
+    "records/p2_closure.json": "6161b2f264e1ab988014f16f1619d6c09a2dec0ae79e52031937cc15ad0b9384",
+    "records/p3_protocol.json": "99abc87d77a031e8e6f5274a039aeea926a0dad13cddee0d6da7e66044a8ff44",
+    "scripts/darm_q243_p1_event_audit.py": "9ceac2912825057cac103b02cb5d36b21138f0dc73b0070c300516c8290c91e6",
+    "scripts/darm_q243_p1_hardened_audit.py": "d195f25e05c3ea038bda4aa78802f0b3c3a45487fb0a72851a60bbce9e6a15a4",
+    "scripts/darm_q244_p2_event_audit.py": "3d28546002e95f6d55e53ca420e801fd99e6c70eea2c46c3aed8c93ad4253769",
+    "scripts/darm_q244_p2_event_audit_v2.py": "3c4deccc559a041b14c53c694726583b923f1dbaa7dd267da311e66d7fe449f2",
+    "scripts/darm_q244_p2_mutation_suite.py": "6a582ed096cedde3f23555630e3ff31fe4978f88e1f7b2526be7cbf536c38ad1",
+    "scripts/darm_q244_p2_mutation_suite_v2.py": "11b6d04bb03bc62c252d08ad49b18324a7f21bdc026ec9b1ebcf09f027604729"
+  },
+  "schema": "DARM-Q44-RESEARCH-PUBLICATION-v1"
+}
