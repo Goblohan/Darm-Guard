@@ -39,8 +39,12 @@ services:
     network_mode: none
     read_only: true
     user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     volumes:
-      - sock:/sock
+      - sock:/sock:ro
       - ./agent.py:/agent.py:ro
     command: ["python", "/agent.py"]
 volumes:
