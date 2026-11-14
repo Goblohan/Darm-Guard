@@ -48,9 +48,10 @@ they arrive in a later read.
 
 T10. Reject invalid or ambiguous JSON, including duplicate
 object keys and non-standard NaN/Infinity constants, as well
-as non-object and schema-invalid replies. Treat them as
-untrusted without converting the possibly submitted operation
-into reject/none.
+as non-object and schema-invalid replies. Treat a response
+that exhausts the decoder's recursion limit as untrusted too.
+Do not convert the possibly submitted operation into
+reject/none.
 
 T11. Preserve broker-declared evidence status and effect
 uncertainty. No promotion from unknown to succeeded.
@@ -76,6 +77,7 @@ A13. Oversized requests are rejected before socket creation.
 A14. Request encoding is covered by the transaction deadline.
 A15. The bounded encoder preserves the broker's JSON wire format.
 A16. The request byte ceiling includes LF and accepts its exact boundary.
+A17. Deep nesting that exhausts JSON decoder recursion returns unknown.
 
 ## Evidence boundaries
 

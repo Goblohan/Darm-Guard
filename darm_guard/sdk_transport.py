@@ -217,6 +217,7 @@ class BoundedBrokerClient:
                     ValueError,
                     UnicodeError,
                     InvalidResponse,
+                    RecursionError,
                 ) as exc:
                     return self._result("unknown", "unknown", exc)
 

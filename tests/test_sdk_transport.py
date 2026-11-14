@@ -454,6 +454,26 @@ class StrictJsonTransportTests(unittest.TestCase):
         self.assertEqual(result.effect, "unknown")
         self.assertFalse(result.broker_reported_success)
 
+    def test_decoder_recursion_exhaustion_stays_unknown(self):
+        reply = (
+            b'{"decision":"admit","effect":"succeeded",'
+            b'"executed":true,"result":'
+            + b"[" * 10000
+            + b"0"
+            + b"]" * 10000
+            + b"}\n"
+        )
+
+        with mock_broker(reply) as path:
+            result = BoundedBrokerClient(
+                socket_path=path,
+                timeout_seconds=2.0,
+            ).propose("read_file", {"path": "fixture"})
+
+        self.assertEqual(result.decision, "unknown")
+        self.assertEqual(result.effect, "unknown")
+        self.assertFalse(result.broker_reported_success)
+
 
 class OutboundRequestBoundsTests(unittest.TestCase):
     def test_request_encoder_preserves_wire_format(self):
