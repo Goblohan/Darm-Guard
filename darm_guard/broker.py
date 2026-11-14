@@ -323,21 +323,22 @@ class AuditLog:
         self.checkpointer = None        # optional: publishes signed chain heads
         self._in_hook = False
         if os.path.exists(path):
-            for n, line in enumerate(open(path)):
-                if not line.strip():
-                    continue
-                e = json.loads(line)
-                h = e.pop("entry_hash")
-                body = hashlib.sha256(json.dumps(e, sort_keys=True).encode()).hexdigest()
-                if e.get("prev_hash") != self.prev or body != h:
-                    raise RuntimeError(f"audit chain broken at entry {n}: refusing to start")
-                self.prev = h
-                self.count += 1
-                if self.genesis is None:
-                    self.genesis = h
-                if e.get("ts"):
-                    ts = datetime.fromisoformat(e["ts"])
-                    self.last_ts = max(self.last_ts, ts) if self.last_ts else ts
+            with open(path, encoding="utf-8") as audit_file:
+                for n, line in enumerate(audit_file):
+                    if not line.strip():
+                        continue
+                    e = json.loads(line)
+                    h = e.pop("entry_hash")
+                    body = hashlib.sha256(json.dumps(e, sort_keys=True).encode()).hexdigest()
+                    if e.get("prev_hash") != self.prev or body != h:
+                        raise RuntimeError(f"audit chain broken at entry {n}: refusing to start")
+                    self.prev = h
+                    self.count += 1
+                    if self.genesis is None:
+                        self.genesis = h
+                    if e.get("ts"):
+                        ts = datetime.fromisoformat(e["ts"])
+                        self.last_ts = max(self.last_ts, ts) if self.last_ts else ts
 
     def append(self, entry: dict) -> None:
         with self._lock:

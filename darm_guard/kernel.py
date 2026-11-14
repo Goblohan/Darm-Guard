@@ -87,58 +87,157 @@ class KernelClient:
         self.timeout = timeout
         self._proc = None
         self._lock = threading.Lock()
+        self._cleanup_unresolved = False
+        self._cleanup_error = ""
 
     def _start(self) -> None:
         self._proc = subprocess.Popen(
             [self.path], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, text=True, bufsize=1)
 
-    def close(self) -> None:
-        if self._proc is not None:
+    def _close_locked(self) -> bool:
+        proc = self._proc
+        if proc is None:
+            self._cleanup_unresolved = False
+            self._cleanup_error = ""
+            return True
+
+        try:
+            if proc.poll() is None:
+                proc.kill()
+        except ProcessLookupError:
+            pass
+        except Exception as exc:
+            self._cleanup_unresolved = True
+            self._cleanup_error = (
+                f"process_kill_failed: {type(exc).__name__}: {exc}"
+            )
+            return False
+
+        try:
+            proc.wait(timeout=self.timeout)
+        except Exception as exc:
+            self._cleanup_unresolved = True
+            self._cleanup_error = (
+                f"process_reap_failed: {type(exc).__name__}: {exc}"
+            )
+            return False
+
+        close_errors = []
+        for name in ("stdin", "stdout", "stderr"):
+            stream = getattr(proc, name, None)
+            if stream is None:
+                continue
             try:
-                self._proc.kill()
-            except Exception:
-                pass
-            self._proc = None
+                stream.close()
+            except Exception as exc:
+                close_errors.append(
+                    f"{name}: {type(exc).__name__}: {exc}"
+                )
+
+        if close_errors:
+            self._cleanup_unresolved = True
+            self._cleanup_error = (
+                "stream_close_failed: " + "; ".join(close_errors)
+            )
+            return False
+
+        self._proc = None
+        self._cleanup_unresolved = False
+        self._cleanup_error = ""
+        return True
+
+    def close(self) -> bool:
+        with self._lock:
+            return self._close_locked()
 
     def decide(self, request: dict) -> KernelDecision:
+        with self._lock:
+            return self._decide_locked(request)
+
+    def _decide_locked(self, request: dict) -> KernelDecision:
+        if self._cleanup_unresolved:
+            return KernelDecision(
+                False,
+                error=f"kernel cleanup unresolved: {self._cleanup_error}",
+            )
+
         # darm-monitor K7: every request carries a fresh nonce, and only a reply
         # carrying the same nonce answers it (reply_names_its_request)
         nonce = uuid.uuid4().hex
         request = dict(request, nonce=nonce)
-        with self._lock:
-            try:
-                if not self.path:
-                    return KernelDecision(False, error="no kernel: run darm-guard-install-kernel or set DARM_KERNEL_PATH")
-                if self._proc is None or self._proc.poll() is not None:
-                    self._start()
-                self._proc.stdin.write(json.dumps(request) + "\n")
-                self._proc.stdin.flush()
-                ready, _, _ = select.select([self._proc.stdout], [], [], self.timeout)
-                if not ready:
-                    self.close()
-                    return KernelDecision(False, error="kernel timeout")
-                line = self._proc.stdout.readline()
-                if not line:
-                    self.close()
-                    return KernelDecision(False, error="kernel exited")
-                data = json.loads(line)
-            except Exception as e:
-                self.close()
-                return KernelDecision(False, error=f"kernel unavailable: {e}")
-        if not isinstance(data, dict):   # darm-monitor K5 pyAdmits: only an object can admit
-            return KernelDecision(False, error="kernel reply is not a JSON object", raw=line.strip())
-        if data.get("nonce") != nonce:
-            self.close()   # out of step with the kernel: restart it before the next request
-            return KernelDecision(False, error="kernel reply does not answer this request (nonce mismatch)",
-                                  raw=line.strip())
-        if data.get("decision") == "admit":
-            inv = data.get("invocation")
-            return KernelDecision(True, raw=line.strip(),
-                                  invocation=inv if isinstance(inv, dict) else None)
-        return KernelDecision(False, failure=data.get("failure"),
-                              error=data.get("error"), raw=line.strip())
 
+        try:
+            if not self.path:
+                return KernelDecision(
+                    False,
+                    error="no kernel: run darm-guard-install-kernel "
+                          "or set DARM_KERNEL_PATH",
+                )
+
+            if self._proc is None:
+                self._start()
+            elif self._proc.poll() is not None:
+                if not self._close_locked():
+                    return KernelDecision(
+                        False,
+                        error=f"kernel cleanup unresolved: {self._cleanup_error}",
+                    )
+                self._start()
+
+            self._proc.stdin.write(json.dumps(request) + "\n")
+            self._proc.stdin.flush()
+            ready, _, _ = select.select(
+                [self._proc.stdout], [], [], self.timeout
+            )
+            if not ready:
+                self._close_locked()
+                return KernelDecision(False, error="kernel timeout")
+
+            line = self._proc.stdout.readline()
+            if not line:
+                self._close_locked()
+                return KernelDecision(False, error="kernel exited")
+
+            data = json.loads(line)
+        except Exception as exc:
+            self._close_locked()
+            return KernelDecision(
+                False,
+                error=f"kernel unavailable: {exc}",
+            )
+
+        if not isinstance(data, dict):
+            self._close_locked()
+            return KernelDecision(
+                False,
+                error="kernel reply is not a JSON object",
+                raw=line.strip(),
+            )
+
+        if data.get("nonce") != nonce:
+            self._close_locked()
+            return KernelDecision(
+                False,
+                error="kernel reply does not answer this request "
+                      "(nonce mismatch)",
+                raw=line.strip(),
+            )
+
+        if data.get("decision") == "admit":
+            invocation = data.get("invocation")
+            return KernelDecision(
+                True,
+                raw=line.strip(),
+                invocation=invocation if isinstance(invocation, dict) else None,
+            )
+
+        return KernelDecision(
+            False,
+            failure=data.get("failure"),
+            error=data.get("error"),
+            raw=line.strip(),
+        )
 
 class KernelGuard:
     """Invocation-level guard. Decisions come from the DARM kernel."""
