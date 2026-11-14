@@ -199,7 +199,7 @@ class BoundedBrokerClient:
 
                     frame, trailing = bytes(data).split(b"\n", 1)
 
-                    if trailing.strip():
+                    if trailing.strip(b" \t\r\n"):
                         raise ValueError("trailing response data")
 
                     remaining()

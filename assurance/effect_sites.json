@@ -504,7 +504,7 @@
     "sdk_response.py:validate_response": "8a314aaf48a000fd",
     "sdk_transport.py:<module>": "095c8435d99edd32",
     "sdk_transport.py:BoundedBrokerClient._result": "35a4e13746678170",
-    "sdk_transport.py:BoundedBrokerClient.propose": "d56f53627781215d",
+    "sdk_transport.py:BoundedBrokerClient.propose": "0105bf2ad6c875fd",
     "sdk_transport.py:BoundedBrokerClient.propose.remaining": "9e469466963800d5",
     "sdk_transport.py:_append_bounded": "0c42aff78f767011",
     "sdk_transport.py:_append_json_string": "04244c6f3075c017",
@@ -701,7 +701,7 @@
     "sdk_response.py:validate_response": "8a314aaf48a000fd",
     "sdk_transport.py:<module>": "095c8435d99edd32",
     "sdk_transport.py:BoundedBrokerClient._result": "35a4e13746678170",
-    "sdk_transport.py:BoundedBrokerClient.propose": "d56f53627781215d",
+    "sdk_transport.py:BoundedBrokerClient.propose": "0105bf2ad6c875fd",
     "sdk_transport.py:BoundedBrokerClient.propose.remaining": "9e469466963800d5",
     "sdk_transport.py:_append_bounded": "0c42aff78f767011",
     "sdk_transport.py:_append_json_string": "04244c6f3075c017",
@@ -906,7 +906,7 @@
     "sdk_response.py:validate_response": "8a314aaf48a000fd",
     "sdk_transport.py:<module>": "095c8435d99edd32",
     "sdk_transport.py:BoundedBrokerClient._result": "35a4e13746678170",
-    "sdk_transport.py:BoundedBrokerClient.propose": "d56f53627781215d",
+    "sdk_transport.py:BoundedBrokerClient.propose": "0105bf2ad6c875fd",
     "sdk_transport.py:BoundedBrokerClient.propose.remaining": "9e469466963800d5",
     "sdk_transport.py:_append_bounded": "0c42aff78f767011",
     "sdk_transport.py:_append_json_string": "04244c6f3075c017",
@@ -1230,7 +1230,7 @@
     "tests/test_sdk_transport.py",
     "tests/test_sdk_integration.py"
    ],
-   "fingerprint": "d56f53627781215d"
+   "fingerprint": "0105bf2ad6c875fd"
   }
  }
 }

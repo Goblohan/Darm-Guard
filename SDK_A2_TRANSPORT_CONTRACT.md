@@ -42,9 +42,9 @@ T07. No automatic retry after transmission is attempted.
 T08. A complete transport frame is not proof of execution.
 Pass decoded responses through the SDK response validator.
 
-T09. After the first LF, accept only trailing whitespace
-through EOF. Reject non-whitespace trailing bytes even when
-they arrive in a later read.
+T09. After the first LF, accept only JSON whitespace (space,
+tab, CR, or LF) through EOF. Reject all other trailing bytes,
+even when they arrive in a later read.
 
 T10. Reject invalid or ambiguous JSON, including duplicate
 object keys and non-standard NaN/Infinity constants, as well
@@ -78,6 +78,7 @@ A14. Request encoding is covered by the transaction deadline.
 A15. The bounded encoder preserves the broker's JSON wire format.
 A16. The request byte ceiling includes LF and accepts its exact boundary.
 A17. Deep nesting that exhausts JSON decoder recursion returns unknown.
+A18. Vertical tab and form feed after a frame are rejected as non-JSON whitespace.
 
 ## Evidence boundaries
 

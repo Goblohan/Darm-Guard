@@ -318,6 +318,26 @@ class TransportFramingTests(unittest.TestCase):
         self.assertFalse(result.broker_reported_success)
 
 
+    def test_non_json_whitespace_after_frame_is_rejected(self):
+        valid = json.dumps({
+            "decision": "admit",
+            "effect": "succeeded",
+            "executed": True,
+        }).encode()
+
+        for trailing in (b"\x0b", b"\x0c"):
+            with self.subTest(trailing=trailing):
+                with mock_broker(valid + b"\n" + trailing) as path:
+                    result = BoundedBrokerClient(
+                        socket_path=path,
+                        timeout_seconds=2.0,
+                    ).propose("read_file", {"path": "fixture"})
+
+                self.assertEqual(result.decision, "unknown")
+                self.assertEqual(result.effect, "unknown")
+                self.assertFalse(result.broker_reported_success)
+
+
 class TransportSubmissionTests(unittest.TestCase):
 
     def test_A02_partial_send_preserves_unknown(self):
