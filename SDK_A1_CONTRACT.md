@@ -11,7 +11,7 @@ I01. No direct governed effect from SDK code.
 I02. No agent-assigned trusted provenance.
 I03. Malformed responses never become confirmed success.
 I04. Possible post-submission effects remain UNKNOWN on transport failure.
-I05. Response bytes and processing duration must be bounded.
+I05. Request and response bytes and processing duration must be bounded.
 I06. Authorization, effect, evidence and assurance remain distinct.
 I07. No implicit retry of potentially executed requests.
 I08. Connectivity does not prove complete mediation.
@@ -34,7 +34,7 @@ I12. Missing evidence never defaults to recorded.
 
 N01. JSON null, list, string and incomplete dictionaries.
 N02. Invalid decision and effect combinations.
-N03. Truncated and oversized responses.
+N03. Truncated and oversized responses remain uncertain.
 N04. Slow fragmented responses beyond the overall deadline.
 N05. Connection loss before, during and after submission.
 N06. Missing evidence and missing assurance basis.
@@ -42,6 +42,10 @@ N07. Unresolved idempotency-key request.
 N08. already_applied without a new effect.
 N09. Unexpected broker error with unknown effect.
 N10. Untrusted or substituted socket peer.
+N11. Oversized outbound requests are rejected before connecting.
+N12. Request encoding is covered by the transaction deadline.
+N13. Exact request byte boundary includes LF; one byte over is rejected.
+N14. Bounded encoding preserves the existing broker wire representation.
 
 ## Track B obligations
 

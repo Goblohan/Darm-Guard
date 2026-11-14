@@ -455,5 +455,91 @@ class StrictJsonTransportTests(unittest.TestCase):
         self.assertFalse(result.broker_reported_success)
 
 
+class OutboundRequestBoundsTests(unittest.TestCase):
+    def test_request_encoder_preserves_wire_format(self):
+        from darm_guard.sdk_transport import _encode_request_payload
+
+        args = {
+            "path": "fixture",
+            "count": 3,
+            "enabled": True,
+        }
+        payload = _encode_request_payload(
+            "read_file",
+            args,
+            4096,
+            lambda: 1.0,
+        )
+        expected = (
+            json.dumps({
+                "tool": "read_file",
+                "args": [[key, str(value)] for key, value in args.items()],
+            }) + "\n"
+        ).encode("utf-8")
+
+        self.assertEqual(payload, expected)
+
+    def test_request_limit_includes_newline_exactly(self):
+        from darm_guard.sdk_transport import _encode_request_payload
+
+        args = {"path": "fixture"}
+        payload = _encode_request_payload(
+            "read_file", args, 1024, lambda: 1.0
+        )
+
+        exact = _encode_request_payload(
+            "read_file", args, len(payload), lambda: 1.0
+        )
+        self.assertEqual(exact, payload)
+
+        with self.assertRaisesRegex(ValueError, "request size limit exceeded"):
+            _encode_request_payload(
+                "read_file", args, len(payload) - 1, lambda: 1.0
+            )
+
+    def test_oversized_request_is_rejected_before_connect(self):
+        from unittest.mock import patch
+
+        client = BoundedBrokerClient(
+            max_request_bytes=128,
+            timeout_seconds=2.0,
+        )
+        with patch("darm_guard.sdk_transport.socket.socket") as socket_mock:
+            result = client.propose(
+                "write_file",
+                {"content": "x" * 200},
+            )
+
+        socket_mock.assert_not_called()
+        self.assertEqual(result.decision, "reject")
+        self.assertEqual(result.effect, "none")
+        self.assertFalse(result.broker_reported_success)
+
+    def test_deadline_includes_request_encoding(self):
+        from unittest.mock import patch
+
+        client = BoundedBrokerClient(timeout_seconds=1.0)
+        with patch(
+            "darm_guard.sdk_transport.time.monotonic",
+            side_effect=[10.0, 12.0],
+        ):
+            with patch(
+                "darm_guard.sdk_transport.socket.socket"
+            ) as socket_mock:
+                result = client.propose(
+                    "read_file",
+                    {"path": "fixture"},
+                )
+
+        socket_mock.assert_not_called()
+        self.assertEqual(result.decision, "reject")
+        self.assertEqual(result.effect, "none")
+        self.assertFalse(result.broker_reported_success)
+
+    def test_request_limit_cannot_exceed_broker_limit(self):
+        with self.assertRaisesRegex(ValueError, "invalid request size limit"):
+            BoundedBrokerClient(max_request_bytes=(1 << 20) + 1)
+
+
 if __name__ == "__main__":
     unittest.main()

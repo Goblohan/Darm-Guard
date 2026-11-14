@@ -20,11 +20,14 @@ is not a complete response.
 
 T03. Bound cumulative response bytes, including the delimiter.
 Provisional default: 4 MiB, configurable and subject to
-real-broker compatibility testing.
+real-broker compatibility testing. Also bound encoded request
+bytes, including LF, to at most 1 MiB, the broker's MAX_REQUEST.
+Callers may lower this request ceiling but cannot raise it.
 
 T04. Enforce one monotonic transaction deadline covering
-connect, request transmission, and response reception.
-Individual socket timeouts must respect remaining time.
+request encoding, connect, transmission, and response reception.
+Check remaining time during encoding. Socket timeouts must
+respect remaining time.
 
 T05. A definite pre-transmission connection failure may
 produce decision=reject, effect=none.
@@ -69,6 +72,10 @@ A09. Trailing bytes after a complete frame.
 A10. Boundary-size complete response.
 A11. Unknown effect retained without retry.
 A12. Repeated requests use independent transactions.
+A13. Oversized requests are rejected before socket creation.
+A14. Request encoding is covered by the transaction deadline.
+A15. The bounded encoder preserves the broker's JSON wire format.
+A16. The request byte ceiling includes LF and accepts its exact boundary.
 
 ## Evidence boundaries
 
@@ -77,5 +84,6 @@ resource use. It does not establish complete mediation,
 broker authenticity, independent event observation,
 external custody, or causal assurance.
 
-The proposed size ceiling requires compatibility tests
-against representative real broker responses.
+The response ceiling requires compatibility tests against
+representative real broker responses. Verify the request ceiling
+against the pinned broker's MAX_REQUEST when that baseline changes.
