@@ -67,6 +67,11 @@ def _freeze_payload(value, depth=0):
         raise InvalidResponse("payload nesting limit exceeded")
 
     if value is None or type(value) in (str, int, float, bool):
+        if type(value) is float and (
+            value != value
+            or value in (float('inf'), float('-inf'))
+        ):
+            raise InvalidResponse('non-finite payload number')
         return value
 
     if isinstance(value, list):

@@ -465,5 +465,15 @@ class PayloadDepthBoundaryTests(unittest.TestCase):
             })
 
 
+class NonFinitePayloadTests(unittest.TestCase):
+    def test_non_finite_numbers_are_rejected_recursively(self):
+        from darm_guard.sdk_response import InvalidResponse, _freeze_payload
+
+        for value in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(value=repr(value)):
+                with self.assertRaises(InvalidResponse):
+                    _freeze_payload({"nested": [value]})
+
+
 if __name__ == "__main__":
     unittest.main()

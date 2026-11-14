@@ -421,5 +421,39 @@ class TransportTransactionTests(unittest.TestCase):
                 self.assertEqual(result.effect, "none")
 
 
+class StrictJsonTransportTests(unittest.TestCase):
+    def test_nonstandard_nan_response_stays_unknown(self):
+        reply = (
+            b'{"decision":"admit","effect":"succeeded",'
+            b'"executed":true,"content":NaN}\n'
+        )
+
+        with mock_broker(reply) as path:
+            result = BoundedBrokerClient(
+                socket_path=path,
+                timeout_seconds=2.0,
+            ).propose("read_file", {"path": "fixture"})
+
+        self.assertEqual(result.decision, "unknown")
+        self.assertEqual(result.effect, "unknown")
+        self.assertFalse(result.broker_reported_success)
+
+    def test_duplicate_response_key_stays_unknown(self):
+        reply = (
+            b'{"decision":"reject","decision":"admit",'
+            b'"effect":"succeeded","executed":true}\n'
+        )
+
+        with mock_broker(reply) as path:
+            result = BoundedBrokerClient(
+                socket_path=path,
+                timeout_seconds=2.0,
+            ).propose("read_file", {"path": "fixture"})
+
+        self.assertEqual(result.decision, "unknown")
+        self.assertEqual(result.effect, "unknown")
+        self.assertFalse(result.broker_reported_success)
+
+
 if __name__ == "__main__":
     unittest.main()

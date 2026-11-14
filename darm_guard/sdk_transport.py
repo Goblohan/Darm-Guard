@@ -10,6 +10,19 @@ import time
 from .sdk_response import InvalidResponse, validate_response
 
 
+def _reject_json_constant(token):
+    raise ValueError(f"non-standard JSON constant: {token}")
+
+
+def _unique_json_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON object key: {key}")
+        result[key] = value
+    return result
+
+
 class BoundedBrokerClient:
     """One request per AF_UNIX connection, with no automatic retry."""
 
@@ -105,7 +118,11 @@ class BoundedBrokerClient:
 
                     remaining()
 
-                    response = json.loads(frame)
+                    response = json.loads(
+                        frame,
+                        parse_constant=_reject_json_constant,
+                        object_pairs_hook=_unique_json_object,
+                    )
                     return validate_response(response)
 
                 except (

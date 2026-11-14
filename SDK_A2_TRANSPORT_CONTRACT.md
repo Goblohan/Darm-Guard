@@ -15,7 +15,8 @@ Server framing: lines 1550-1577
 T01. Use AF_UNIX stream transport with newline-delimited JSON.
 
 T02. Require exactly one complete response frame terminated by LF.
-EOF before LF is not a complete response.
+Wait for EOF to rule out delayed trailing data. EOF before LF
+is not a complete response.
 
 T03. Bound cumulative response bytes, including the delimiter.
 Provisional default: 4 MiB, configurable and subject to
@@ -38,13 +39,15 @@ T07. No automatic retry after transmission is attempted.
 T08. A complete transport frame is not proof of execution.
 Pass decoded responses through the SDK response validator.
 
-T09. Do not silently accept non-whitespace trailing bytes
-after the first LF already received in the same chunk.
-Treat protocol deviations conservatively.
+T09. After the first LF, accept only trailing whitespace
+through EOF. Reject non-whitespace trailing bytes even when
+they arrive in a later read.
 
-T10. Reject invalid JSON, non-object JSON, and schema-invalid
-replies as untrusted responses without converting the
-possibly submitted operation into reject/none.
+T10. Reject invalid or ambiguous JSON, including duplicate
+object keys and non-standard NaN/Infinity constants, as well
+as non-object and schema-invalid replies. Treat them as
+untrusted without converting the possibly submitted operation
+into reject/none.
 
 T11. Preserve broker-declared evidence status and effect
 uncertainty. No promotion from unknown to succeeded.
