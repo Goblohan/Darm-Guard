@@ -323,21 +323,28 @@ class AuditLog:
         self.checkpointer = None        # optional: publishes signed chain heads
         self._in_hook = False
         if os.path.exists(path):
-            for n, line in enumerate(open(path)):
-                if not line.strip():
-                    continue
-                e = json.loads(line)
-                h = e.pop("entry_hash")
-                body = hashlib.sha256(json.dumps(e, sort_keys=True).encode()).hexdigest()
-                if e.get("prev_hash") != self.prev or body != h:
-                    raise RuntimeError(f"audit chain broken at entry {n}: refusing to start")
-                self.prev = h
-                self.count += 1
-                if self.genesis is None:
-                    self.genesis = h
-                if e.get("ts"):
-                    ts = datetime.fromisoformat(e["ts"])
-                    self.last_ts = max(self.last_ts, ts) if self.last_ts else ts
+            with open(path, encoding="utf-8") as audit_file:
+                for n, line in enumerate(audit_file):
+                    if not line.strip():
+                        continue
+                    e = json.loads(line)
+                    h = e.pop("entry_hash")
+                    body = hashlib.sha256(
+                        json.dumps(e, sort_keys=True).encode()
+                    ).hexdigest()
+                    if e.get("prev_hash") != self.prev or body != h:
+                        raise RuntimeError(
+                            f"audit chain broken at entry {n}: refusing to start"
+                        )
+                    self.prev = h
+                    self.count += 1
+                    if self.genesis is None:
+                        self.genesis = h
+                    if e.get("ts"):
+                        ts = datetime.fromisoformat(e["ts"])
+                        self.last_ts = (
+                            max(self.last_ts, ts) if self.last_ts else ts
+                        )
 
     def append(self, entry: dict) -> None:
         with self._lock:
@@ -992,6 +999,90 @@ def _basis(resp: dict) -> list:
     return out
 
 
+
+import time
+from contextlib import contextmanager
+
+class ShutdownAdmissionClosed(RuntimeError):
+    pass
+
+
+class ShutdownBarrier:
+    def __init__(self):
+        self._condition = threading.Condition(threading.Lock())
+        self._closing = False
+        self._active = 0
+
+    @property
+    def closing(self):
+        with self._condition:
+            return self._closing
+
+    @property
+    def active(self):
+        with self._condition:
+            return self._active
+
+    @contextmanager
+    def transaction(self):
+        # Admission and registration share one atomic
+        # critical section with begin_shutdown().
+        with self._condition:
+            if self._closing:
+                raise ShutdownAdmissionClosed(
+                    "broker admission closed"
+                )
+            self._active += 1
+
+        try:
+            yield
+        finally:
+            with self._condition:
+                assert self._active > 0
+                self._active -= 1
+                if self._active == 0:
+                    self._condition.notify_all()
+
+    def begin_shutdown(self):
+        """Close admission. True only on first transition."""
+        with self._condition:
+            if self._closing:
+                return False
+            self._closing = True
+            self._condition.notify_all()
+            return True
+
+    def wait_drained(self, timeout=None):
+        """True only if admission is closed and active is zero.
+
+        A timeout returns False. It does not imply successful
+        shutdown, cleanup, checkpointing or custody release.
+        """
+        if timeout is not None:
+            if isinstance(timeout, bool) or timeout < 0:
+                raise ValueError("timeout must be nonnegative")
+            deadline = time.monotonic() + timeout
+        else:
+            deadline = None
+
+        with self._condition:
+            if not self._closing:
+                raise RuntimeError(
+                    "close admission before waiting for drain"
+                )
+
+            while self._active:
+                if deadline is None:
+                    self._condition.wait()
+                else:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        return False
+                    self._condition.wait(remaining)
+
+            return True
+
+
 class Broker:
     """B1 brokerStep: parse -> normal-form check -> canonicalize -> kernel
     -> execute the same invocation if admitted -> audit."""
@@ -1018,6 +1109,7 @@ class Broker:
                                  if intents_path and os.path.exists(intents_path) else None)
         self.intents_path = intents_path
         self._lock = threading.Lock()
+        self._shutdown_barrier = ShutdownBarrier()
         self._keys = {}   # idempotency key -> {rid, hash, state, effect}
         self.key = key
         if key is not None and not key.ring.can_sign():
@@ -1071,6 +1163,18 @@ class Broker:
         return d.invocation, tool, {"decision": "admit"}
 
     def handle(self, obj, peer=None) -> dict:
+        try:
+            with self._shutdown_barrier.transaction():
+                return self._handle_registered(obj, peer)
+        except ShutdownAdmissionClosed:
+            return {
+                "decision": "reject",
+                "effect": "none",
+                "error": "broker admission closed",
+                "evidence": "unrecorded",
+            }
+
+    def _handle_registered(self, obj, peer=None) -> dict:
         """Evidence before effect. Never raises: any unexpected failure is
         reported with effect 'unknown' rather than dropping the connection."""
         try:
@@ -1550,8 +1654,74 @@ class Broker:
 MAX_REQUEST = 1 << 20   # 1 MB per proposal
 
 
+class RequestLifecycleClosed(RuntimeError):
+    pass
+
+
+class RequestLifecycleGate:
+    """Test candidate: tracks each request through local send."""
+
+    def __init__(self):
+        self._condition = threading.Condition()
+        self._closing = False
+        self._pending = 0
+
+    @property
+    def pending(self):
+        with self._condition:
+            return self._pending
+
+    @property
+    def closing(self):
+        with self._condition:
+            return self._closing
+
+    @contextmanager
+    def request(self):
+        with self._condition:
+            if self._closing:
+                raise RequestLifecycleClosed(
+                    "request lifecycle admission closed"
+                )
+            self._pending += 1
+
+        try:
+            yield
+        finally:
+            with self._condition:
+                assert self._pending > 0
+                self._pending -= 1
+                self._condition.notify_all()
+
+    def close_registration(self):
+        with self._condition:
+            if self._closing:
+                return False
+            self._closing = True
+            self._condition.notify_all()
+            return True
+
+    def wait_drained(self, timeout=None):
+        with self._condition:
+            if not self._closing:
+                raise RuntimeError(
+                    "close request registration before drain"
+                )
+            return self._condition.wait_for(
+                lambda: self._pending == 0,
+                timeout=timeout,
+            )
+
+
 class _Handler(socketserver.StreamRequestHandler):
     def handle(self):
+        try:
+            return self._handle_request_loop()
+        except BaseException as exc:
+            self.server.record_request_failure(exc)
+            raise
+
+    def _handle_request_loop(self):
         try:
             raw_cred = self.request.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED,
                                                struct.calcsize("3i"))
@@ -1563,29 +1733,611 @@ class _Handler(socketserver.StreamRequestHandler):
             raw = self.rfile.readline(MAX_REQUEST + 1)
             if not raw:
                 break
-            if len(raw) > MAX_REQUEST:
-                self._send({"decision": "reject", "effect": "none", "error": "request too large"})
-                break
             try:
-                obj = json.loads(raw)
-            except Exception:
-                obj = None
-            self._send(self.server.broker.handle(obj, peer))
+                with self.server.connection_request(self.request):
+                    if len(raw) > MAX_REQUEST:
+                        self._send({"decision": "reject", "effect": "none", "error": "request too large"})
+                        break
+                    try:
+                        obj = json.loads(raw)
+                    except Exception:
+                        obj = None
+                    self._send(self.server.broker.handle(obj, peer))
+            except RequestLifecycleClosed:
+                break
 
     def _send(self, resp: dict) -> None:
         self.wfile.write((json.dumps(resp) + "\n").encode())
         self.wfile.flush()
 
 
+class ConnectionRegistrationGate:
+    """Accepted-socket accounting, no idle retirement yet."""
+
+    def __init__(self):
+        self._condition = threading.Condition()
+        self._closing = False
+        self._connections = set()
+
+    def register(self, connection):
+        with self._condition:
+            if self._closing:
+                return False
+            assert connection not in self._connections
+            self._connections.add(connection)
+            return True
+
+    def unregister(self, connection):
+        with self._condition:
+            assert connection in self._connections
+            self._connections.remove(connection)
+            self._condition.notify_all()
+
+    def close_registration(self):
+        with self._condition:
+            if self._closing:
+                return False
+            self._closing = True
+            self._condition.notify_all()
+            return True
+
+    def wait_drained(self, timeout=None):
+        with self._condition:
+            if not self._closing:
+                raise RuntimeError(
+                    "connection registration remains open"
+                )
+            return self._condition.wait_for(
+                lambda: not self._connections,
+                timeout=timeout,
+            )
+
+    @property
+    def pending(self):
+        with self._condition:
+            return len(self._connections)
+
+
+
+import sys
+
+
+class _ConnectionActivity:
+    """Candidate per-connection lifecycle state."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.state = "READING"
+        self.cutoff = False
+
+
 class _Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     daemon_threads = True
+
+    def __init__(self, *args, **kwargs):
+        self._request_gate = RequestLifecycleGate()
+        self._connection_gate = ConnectionRegistrationGate()
+        self._worker_tracking_lock = threading.Lock()
+        self._worker_threads = []
+        self._worker_startup_faults = []
+        self._request_failure_lock = threading.Lock()
+        self._request_failures = []
+        self._activity_lock = threading.Lock()
+        self._activities = {}
+        self._retirement_failure_lock = threading.Lock()
+        self._retirement_failures = []
+        self._shutdown_phase_lock = threading.RLock()
+        self._shutdown_phase = "RUNNING"
+        self._shutdown_serving_thread = None
+        super().__init__(*args, **kwargs)
     request_queue_size = 1024   # a burst larger than the backlog gets EAGAIN at connect (P10); the kernel caps this at net.core.somaxconn
 
+
+    def process_request(self, request, client_address):
+        # Accept-loop ownership begins before worker creation.
+        if not self._connection_gate.register(request):
+            self.shutdown_request(request)
+            return
+
+        worker = None
+        activity_attached = False
+
+        try:
+            self._attach_activity(request)
+            activity_attached = True
+            worker = threading.Thread(
+                target=self.process_request_thread,
+                args=(request, client_address),
+            )
+            worker.daemon = self.daemon_threads
+
+            # Retain the worker object before attempting startup.
+            with self._worker_tracking_lock:
+                self._worker_threads.append(worker)
+
+            worker.start()
+
+        except BaseException as exc:
+            if worker is not None and worker.ident is not None:
+                # A worker has been observed starting. Do not
+                # unregister its connection from this thread.
+                # Preserve the fault for later reconciliation.
+                with self._worker_tracking_lock:
+                    self._worker_startup_faults.append(
+                        (worker, type(exc).__name__, str(exc))
+                    )
+                return
+
+            # No worker startup was observed in this scope.
+            # Remove its unused tracking record and return
+            # connection cleanup to the caller's error path.
+            with self._worker_tracking_lock:
+                if worker is not None and worker in self._worker_threads:
+                    self._worker_threads.remove(worker)
+
+            if activity_attached:
+                self._detach_activity(request)
+            self._connection_gate.unregister(request)
+            raise
+
+    def worker_snapshot(self):
+        with self._worker_tracking_lock:
+            return tuple(self._worker_threads)
+
+    def startup_fault_snapshot(self):
+        with self._worker_tracking_lock:
+            return tuple(self._worker_startup_faults)
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            # Remove worker tracking before releasing the connection
+            # registration. A drained connection then has no worker record.
+            self._detach_activity(request)
+            worker = threading.current_thread()
+            with self._worker_tracking_lock:
+                if worker in self._worker_threads:
+                    self._worker_threads.remove(worker)
+            self._connection_gate.unregister(request)
+
+    def close_connection_registration(self):
+        return self._connection_gate.close_registration()
+
+    def wait_connections_drained(self, timeout=None):
+        return self._connection_gate.wait_drained(timeout)
+
+    def record_request_failure(self, exc):
+        record = (
+            threading.get_ident(),
+            type(exc).__name__,
+            str(exc),
+        )
+        with self._request_failure_lock:
+            self._request_failures.append(record)
+
+    def request_failure_snapshot(self):
+        with self._request_failure_lock:
+            return tuple(self._request_failures)
+
+    def _attach_activity(self, request):
+        with self._activity_lock:
+            assert request not in self._activities
+            self._activities[request] = _ConnectionActivity()
+
+    def _detach_activity(self, request):
+        with self._activity_lock:
+            activity = self._activities.pop(request)
+
+        with activity.lock:
+            assert activity.state != "ACTIVE"
+            activity.state = "CLOSED"
+
+    @contextmanager
+    def connection_request(self, request):
+        with self._activity_lock:
+            activity = self._activities[request]
+
+        # Request admission and local retirement share
+        # this connection's lock.
+        with activity.lock:
+            if activity.cutoff or activity.state != "READING":
+                raise RequestLifecycleClosed(
+                    "connection admission retired"
+                )
+
+            context = self._request_gate.request()
+            context.__enter__()
+            activity.state = "ACTIVE"
+
+        exception = (None, None, None)
+
+        try:
+            yield
+        except BaseException:
+            exception = sys.exc_info()
+            raise
+        finally:
+            with activity.lock:
+                try:
+                    context.__exit__(*exception)
+                finally:
+                    retire_after_response = activity.cutoff
+                    activity.state = (
+                        "RETIRING"
+                        if retire_after_response
+                        else "READING"
+                    )
+
+            # Shutdown is postponed until the admitted
+            # request's local response context has exited.
+            if retire_after_response:
+                try:
+                    request.shutdown(socket.SHUT_RD)
+                except OSError:
+                    pass
+
+    def shutdown_request(self, request):
+        """
+        Serialize socket cleanup with idle retirement.
+
+        Rejected sockets that were never registered
+        retain the inherited cleanup behavior.
+        """
+        with self._activity_lock:
+            activity = self._activities.get(request)
+
+            if activity is None:
+                return super().shutdown_request(request)
+
+            with activity.lock:
+                return super().shutdown_request(request)
+
+    def retire_idle_connections(self):
+        """
+        Candidate failure-accounted retirement.
+
+        Requires stopped accept loop, closed global
+        request admission and closed connection
+        registration. Preconditions not enforced here.
+        """
+        count = 0
+        failures = []
+
+        with self._activity_lock:
+            for request, activity in tuple(
+                self._activities.items()
+            ):
+                with activity.lock:
+                    if activity.state == "CLOSED":
+                        continue
+
+                    activity.cutoff = True
+
+                    if activity.state != "READING":
+                        continue
+
+                    # The activity and socket remain owned
+                    # while the shutdown call executes.
+                    try:
+                        request.shutdown(socket.SHUT_RD)
+                    except OSError as exc:
+                        activity.state = "RETIRE_FAILED"
+
+                        record = (
+                            id(request),
+                            type(exc).__name__,
+                            exc.errno,
+                            str(exc),
+                        )
+
+                        with self._retirement_failure_lock:
+                            self._retirement_failures.append(
+                                record
+                            )
+
+                        failures.append(exc)
+                    else:
+                        activity.state = "RETIRING"
+                        count += 1
+
+        if failures:
+            raise RuntimeError(
+                f"{len(failures)} idle retirement "
+                "shutdown failure(s)"
+            ) from failures[0]
+
+        return count
+
+
+
+    def activity_snapshot(self):
+        with self._activity_lock:
+            entries = tuple(self._activities.items())
+
+        result = []
+
+        for request, activity in entries:
+            with activity.lock:
+                result.append((
+                    request.fileno(),
+                    activity.state,
+                    activity.cutoff,
+                ))
+
+        return tuple(result)
+
+    def retirement_failure_snapshot(self):
+        with self._retirement_failure_lock:
+            return tuple(self._retirement_failures)
+
+    def begin_shutdown_cutoff(self, serving_thread):
+        with self._shutdown_phase_lock:
+            if self._shutdown_phase != "RUNNING":
+                raise RuntimeError("shutdown cutoff already started")
+            if (
+                serving_thread.ident is None
+                or not serving_thread.is_alive()
+            ):
+                raise RuntimeError("serving thread is not running")
+
+            broker_barrier = getattr(
+                getattr(self, "broker", None),
+                "_shutdown_barrier",
+                None,
+            )
+            if broker_barrier is None:
+                raise RuntimeError(
+                    "broker transaction barrier unavailable"
+                )
+
+            self._request_gate.close_registration()
+            self._connection_gate.close_registration()
+            broker_barrier.begin_shutdown()
+
+            if not (
+                self._request_gate.closing
+                and self._connection_gate._closing
+                and broker_barrier.closing
+            ):
+                raise RuntimeError("admission cutoff not established")
+
+            self._shutdown_serving_thread = serving_thread
+            self._shutdown_phase = "ADMISSION_CLOSED"
+
+    def confirm_accept_stopped(self):
+        with self._shutdown_phase_lock:
+            if self._shutdown_phase != "ADMISSION_CLOSED":
+                raise RuntimeError("invalid accept-stop phase")
+
+            thread = self._shutdown_serving_thread
+            if thread is None or thread.is_alive():
+                raise RuntimeError("accept loop has not stopped")
+
+            self._shutdown_phase = "ACCEPT_STOPPED"
+
+    def close_listener_only(self):
+        with self._shutdown_phase_lock:
+            if self._shutdown_phase != "ACCEPT_STOPPED":
+                raise RuntimeError("listener close out of order")
+
+            socketserver.TCPServer.server_close(self)
+
+            if self.socket.fileno() != -1:
+                raise RuntimeError("listener closure not confirmed")
+
+            self._shutdown_phase = "LISTENER_CLOSED"
+
+    def retire_shutdown_idle(self):
+        with self._shutdown_phase_lock:
+            if self._shutdown_phase != "LISTENER_CLOSED":
+                raise RuntimeError("retirement out of order")
+
+            try:
+                count = self.retire_idle_connections()
+            except BaseException:
+                self._shutdown_phase = "RETIREMENT_FAILED"
+                raise
+
+            if self.retirement_failure_snapshot():
+                self._shutdown_phase = "RETIREMENT_FAILED"
+                raise RuntimeError(
+                    "retirement failure ledger nonempty"
+                )
+
+            self._shutdown_phase = "RETIREMENT_ATTEMPTED"
+            return count
+
+    def shutdown_phase_snapshot(self):
+        with self._shutdown_phase_lock:
+            phase = self._shutdown_phase
+            thread = self._shutdown_serving_thread
+
+        broker_barrier = getattr(
+            getattr(self, "broker", None),
+            "_shutdown_barrier",
+            None,
+        )
+        return {
+            "phase": phase,
+            "request_admission_closed":
+                self._request_gate.closing,
+            "connection_admission_closed":
+                self._connection_gate._closing,
+            "broker_barrier_present":
+                broker_barrier is not None,
+            "broker_admission_closed":
+                broker_barrier is not None
+                and broker_barrier.closing,
+            "broker_transactions_pending":
+                broker_barrier.active
+                if broker_barrier is not None
+                else None,
+            "serving_thread_stopped":
+                thread is not None
+                and thread.ident is not None
+                and not thread.is_alive(),
+            "listener_closed":
+                self.socket.fileno() == -1,
+            "requests_pending":
+                self._request_gate.pending,
+            "connections_pending":
+                self._connection_gate.pending,
+            "activities_remaining":
+                len(self.activity_snapshot()),
+            "workers_alive":
+                sum(
+                    worker.is_alive()
+                    for worker in self.worker_snapshot()
+                ),
+            "startup_failures":
+                len(self.startup_fault_snapshot()),
+            "request_failures":
+                len(self.request_failure_snapshot()),
+            "retirement_failures":
+                len(self.retirement_failure_snapshot()),
+        }
+
+    def shutdown_blocking_reasons(self):
+        status = self.shutdown_phase_snapshot()
+        reasons = []
+
+        if status["phase"] != "RETIREMENT_ATTEMPTED":
+            reasons.append("PHASE_NOT_COMPLETE")
+
+        if not status["request_admission_closed"]:
+            reasons.append("REQUEST_ADMISSION_OPEN")
+
+        if not status["connection_admission_closed"]:
+            reasons.append("CONNECTION_ADMISSION_OPEN")
+
+        if not status["broker_barrier_present"]:
+            reasons.append("BROKER_BARRIER_MISSING")
+        elif not status["broker_admission_closed"]:
+            reasons.append("BROKER_ADMISSION_OPEN")
+
+        if not status["serving_thread_stopped"]:
+            reasons.append("ACCEPT_LOOP_NOT_CONFIRMED_STOPPED")
+
+        if not status["listener_closed"]:
+            reasons.append("LISTENER_OPEN")
+
+        for field, reason in (
+            ("requests_pending", "REQUESTS_PENDING"),
+            ("connections_pending", "CONNECTIONS_PENDING"),
+            ("broker_transactions_pending",
+             "BROKER_TRANSACTIONS_PENDING"),
+            ("activities_remaining", "ACTIVITIES_REMAIN"),
+            ("workers_alive", "WORKERS_ALIVE"),
+            ("startup_failures", "WORKER_STARTUP_FAILURE"),
+            ("request_failures", "REQUEST_FAILURE"),
+            ("retirement_failures", "RETIREMENT_FAILURE"),
+        ):
+            if status[field]:
+                reasons.append(reason)
+
+        return tuple(reasons)
+
     def server_close(self):
-        super().server_close()
-        for fd in getattr(self, "_darm_locks", []):
-            os.close(fd)
-        self._darm_locks = []
+        """
+        Close the listener only.
+
+        Never release descriptors in _darm_locks.
+        This operation is not a custody-release API.
+
+        It may also be called during startup cleanup,
+        when the shutdown phase is still RUNNING.
+        """
+        with self._shutdown_phase_lock:
+            socketserver.TCPServer.server_close(self)
+
+    def release_governed_resources(self):
+        """Close process-owned lock descriptors after verified local shutdown."""
+        blockers = self.shutdown_blocking_reasons()
+        if blockers:
+            raise RuntimeError(
+                "GOVERNED_RELEASE_BLOCKED:" + ",".join(blockers)
+            )
+
+        if self.socket.fileno() != -1:
+            raise RuntimeError("GOVERNED_RELEASE_BLOCKED:LISTENER_OPEN")
+
+        broker = getattr(self, "broker", None)
+        if broker is None:
+            raise RuntimeError("GOVERNED_RELEASE_BLOCKED:BROKER_MISSING")
+
+        audit = broker.audit
+        checkpointer = getattr(audit, "checkpointer", None)
+        key = getattr(broker, "key", None)
+
+        if checkpointer is None or key is None:
+            raise RuntimeError(
+                "GOVERNED_RELEASE_BLOCKED:CHECKPOINT_CONFIGURATION_MISSING"
+            )
+        if (
+            audit.count < 1
+            or audit.genesis is None
+            or checkpointer.last_count != audit.count
+            or checkpointer.published < 1
+        ):
+            raise RuntimeError(
+                "GOVERNED_RELEASE_BLOCKED:TERMINAL_CHECKPOINT_UNCONFIRMED"
+            )
+
+        from .checkpoint import check_log, load_published
+
+        checkpoints = load_published(
+            checkpointer.path_for(audit.genesis)
+        )
+        verification = check_log(
+            audit.path,
+            checkpoints,
+            key.ring.public_only(),
+        )
+        exact_terminal_checkpoint = any(
+            item.get("count") == audit.count
+            and item.get("head") == audit.prev
+            for item in checkpoints
+        )
+        if (
+            not verification["ok"]
+            or verification["covered"] != audit.count
+            or verification["entries"] != audit.count
+            or not exact_terminal_checkpoint
+        ):
+            raise RuntimeError(
+                "GOVERNED_RELEASE_BLOCKED:TERMINAL_CHECKPOINT_INVALID"
+            )
+
+        kernel = broker.kernel
+        if (
+            getattr(kernel, "_proc", None) is not None
+            or getattr(kernel, "_cleanup_unresolved", False)
+            or getattr(kernel, "_cleanup_error", "")
+        ):
+            raise RuntimeError(
+                "GOVERNED_RELEASE_BLOCKED:KERNEL_CLEANUP_UNCONFIRMED"
+            )
+
+        lock_fds = getattr(self, "_darm_locks", [])
+        for fd in tuple(lock_fds):
+            fcntl.fcntl(fd, fcntl.F_GETFD)
+
+        released = 0
+        while lock_fds:
+            fd = lock_fds[0]
+            try:
+                os.close(fd)
+            except OSError as exc:
+                raise RuntimeError(
+                    f"GOVERNED_RELEASE_PARTIAL:{released}:"
+                    f"{type(exc).__name__}: {exc}"
+                ) from exc
+            lock_fds.pop(0)
+            released += 1
+
+        return {"lock_descriptors_released": released}
+
 
 
 def _parse_intent(line: str):
@@ -1787,8 +2539,8 @@ def serve(cfg: BrokerConfig, socket_path: str, audit_path: str,
     try:
         key = _load_or_create_keys(audit_path)
     except Exception:
-        # release the socket and the locks (server_close closes _darm_locks); never
-        # let cleanup replace the original error, which says why the start failed
+        # Close the listener here; close the owned lock descriptors below.
+        # Never let cleanup replace the original startup error.
         try:
             srv.server_close()
         except OSError:
@@ -1813,6 +2565,198 @@ def serve(cfg: BrokerConfig, socket_path: str, audit_path: str,
     return srv
 
 
+def coordinate_shutdown(server, serving_thread, drain_timeout=10.0):
+    """Coordinate broker shutdown after the accept loop stops.
+
+    Process-owned lock descriptors are released only after the
+    local drain, terminal checkpoint verification, and kernel cleanup.
+    No external supervisor holds lock custody after process exit.
+    """
+    import math
+    import time
+
+    if (
+        isinstance(drain_timeout, bool)
+        or not isinstance(drain_timeout, (int, float))
+        or not math.isfinite(drain_timeout)
+        or drain_timeout < 0
+    ):
+        raise ValueError("drain_timeout must be finite and nonnegative")
+
+    if threading.current_thread() is serving_thread:
+        raise RuntimeError("shutdown must run outside the serving thread")
+
+    deadline = time.monotonic() + drain_timeout
+
+    def remaining():
+        return max(0.0, deadline - time.monotonic())
+
+    try:
+        server.begin_shutdown_cutoff(serving_thread)
+        server.shutdown()
+        serving_thread.join(timeout=remaining())
+        if serving_thread.is_alive():
+            return {
+                "state": "INCOMPLETE_ACCEPT_STOP",
+                "blockers": ("ACCEPT_LOOP_NOT_CONFIRMED_STOPPED",),
+            }
+
+        server.confirm_accept_stopped()
+        server.close_listener_only()
+        server.retire_shutdown_idle()
+
+        connections_drained = server.wait_connections_drained(
+            timeout=remaining()
+        )
+        requests_drained = server._request_gate.wait_drained(
+            timeout=remaining()
+        )
+        broker_barrier = getattr(
+            server.broker, "_shutdown_barrier", None
+        )
+        broker_transactions_drained = (
+            broker_barrier is not None
+            and broker_barrier.wait_drained(timeout=remaining())
+        )
+        blockers = server.shutdown_blocking_reasons()
+
+        if (
+            not connections_drained
+            or not requests_drained
+            or not broker_transactions_drained
+            or blockers
+        ):
+            return {
+                "state": "INCOMPLETE_DRAIN",
+                "connections_drained": connections_drained,
+                "requests_drained": requests_drained,
+                "broker_transactions_drained":
+                    broker_transactions_drained,
+                "blockers": blockers,
+            }
+    except Exception as exc:
+        return {
+            "state": "INCOMPLETE_SHUTDOWN_PHASE",
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+    audit = server.broker.audit
+    checkpointer = getattr(audit, "checkpointer", None)
+    published_before = (
+        getattr(checkpointer, "published", None)
+        if checkpointer is not None
+        else None
+    )
+
+    try:
+        audit.append({"event": "stop"})
+        checkpoint_error = audit.checkpoint_now()
+    except Exception as exc:
+        return {
+            "state": "INCOMPLETE_FINALIZATION",
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+    if checkpointer is None:
+        return {
+            "state": "STOP_RECORDED_CHECKPOINT_UNAVAILABLE",
+            "release_authorized": False,
+        }
+
+    if checkpoint_error:
+        return {
+            "state": "STOP_RECORDED_CHECKPOINT_FAILED",
+            "error": checkpoint_error,
+            "release_authorized": False,
+        }
+
+    if (
+        checkpointer.last_count != audit.count
+        or checkpointer.published <= published_before
+    ):
+        return {
+            "state": "STOP_RECORDED_CHECKPOINT_UNCONFIRMED",
+            "audit_count": audit.count,
+            "checkpoint_count": checkpointer.last_count,
+            "release_authorized": False,
+        }
+
+    def record_kernel_cleanup_failure(error):
+        published_before_failure = checkpointer.published
+        try:
+            audit.append({
+                "event": "kernel_cleanup_failed",
+                "error": error,
+            })
+            failure_checkpoint_error = audit.checkpoint_now()
+        except Exception as exc:
+            return {
+                "state": "KERNEL_CLEANUP_FAILED_UNRECORDED",
+                "error": error,
+                "record_error": f"{type(exc).__name__}: {exc}",
+                "release_authorized": False,
+            }
+
+        if failure_checkpoint_error:
+            return {
+                "state": "KERNEL_CLEANUP_FAILED_CHECKPOINT_FAILED",
+                "error": error,
+                "checkpoint_error": failure_checkpoint_error,
+                "release_authorized": False,
+            }
+
+        if (
+            checkpointer.last_count != audit.count
+            or checkpointer.published <= published_before_failure
+        ):
+            return {
+                "state": "KERNEL_CLEANUP_FAILED_CHECKPOINT_UNCONFIRMED",
+                "error": error,
+                "audit_count": audit.count,
+                "checkpoint_count": checkpointer.last_count,
+                "release_authorized": False,
+            }
+
+        return {
+            "state": "KERNEL_CLEANUP_FAILED_CHECKPOINTED",
+            "error": error,
+            "release_authorized": False,
+        }
+
+    try:
+        kernel_closed = server.broker.kernel.close()
+    except Exception as exc:
+        return record_kernel_cleanup_failure(
+            f"{type(exc).__name__}: {exc}"
+        )
+
+    if not kernel_closed:
+        return record_kernel_cleanup_failure(
+            getattr(
+                server.broker.kernel,
+                "_cleanup_error",
+                "unknown cleanup error",
+            )
+        )
+
+    try:
+        release = server.release_governed_resources()
+    except Exception as exc:
+        return {
+            "state": "GOVERNED_RESOURCE_RELEASE_FAILED",
+            "error": f"{type(exc).__name__}: {exc}",
+            "resources_released": False,
+        }
+
+    return {
+        "state": "GRACEFUL_SHUTDOWN_COMPLETE",
+        "resources_released": True,
+        "lock_descriptors_released":
+            release["lock_descriptors_released"],
+        "terminal_checkpoint_count": audit.count,
+    }
+
+
 def main() -> None:
     import argparse
     ap = argparse.ArgumentParser(prog="darm-broker",
@@ -1834,16 +2778,21 @@ def main() -> None:
                          "reads: an intent line revokes identical intents, 'tool *' all for a tool")
     a = ap.parse_args()
     import signal
-    # The handler is installed before the broker is reachable. Until the try below
-    # is entered it only records the signal, so no SIGTERM after start is lost:
-    # every log with a start record ends with stop and a final checkpoint.
-    state = {"armed": False, "pending": False}
+    # Signals before serving starts are remembered. Once armed,
+    # they trigger coordinated shutdown from the main thread.
+    state = {
+        "armed": False,
+        "pending": False,
+        "shutting_down": False,
+    }
 
     def _stop(signum, frame):
-        if state["armed"]:
-            raise SystemExit(0)  # so the finally below runs on SIGTERM, not only on Ctrl+C
+        if state["armed"] and not state["shutting_down"]:
+            raise SystemExit(0)
         state["pending"] = True
+
     signal.signal(signal.SIGTERM, _stop)
+    signal.signal(signal.SIGINT, _stop)
     cfg = BrokerConfig.load(a.config, a.registry)
     try:
         srv = serve(cfg, a.socket, a.audit, intents_path=a.intents,
@@ -1858,17 +2807,35 @@ def main() -> None:
     if _pause:                                               # between start and the try, so
         import time as _time                                 # sigterm_window can hit it
         _time.sleep(float(_pause))                           # deterministically; unset otherwise
+    serving_thread = threading.Thread(
+        target=srv.serve_forever,
+        kwargs={"poll_interval": 0.5},
+        name="darm-broker-serve",
+        daemon=True,
+    )
     try:
+        serving_thread.start()
         state["armed"] = True
         if state["pending"]:
             raise SystemExit(0)
         print(f"darm-broker listening on {a.socket}")
         print(f"  config sha256   {cfg_hash}")
         print(f"  registry sha256 {reg_hash}")
-        srv.serve_forever()
+        serving_thread.join()
     finally:
-        srv.broker.audit.append({"event": "stop"})
-        srv.broker.audit.checkpoint_now()      # shutdown: cover the stop record
+        state["shutting_down"] = True
+        try:
+            result = coordinate_shutdown(
+                srv, serving_thread, drain_timeout=10.0
+            )
+        finally:
+            srv.server_close()
+
+        print(f"darm-broker shutdown: {result['state']}")
+        if result["state"] != "GRACEFUL_SHUTDOWN_COMPLETE":
+            raise SystemExit(
+                f"darm-broker: shutdown incomplete: {result}"
+            )
 
 
 # ---- Agent-side client ----------------------------------------------------
