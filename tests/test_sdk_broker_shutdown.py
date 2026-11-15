@@ -218,6 +218,87 @@ class BrokerShutdownProductionTests(unittest.TestCase):
         self.assertFalse(self.broker.kernel.closed)
         self.assertEqual(len(self.server._darm_locks), 1)
 
+    def test_checkpoint_unavailable_still_closes_kernel(self):
+        self.audit.checkpointer = None
+
+        result = candidate.coordinate_shutdown(
+            self.server, self.serving, drain_timeout=2
+        )
+
+        self.assertEqual(
+            result["state"], "STOP_RECORDED_CHECKPOINT_UNAVAILABLE"
+        )
+        self.assertTrue(result["kernel_closed"])
+        self.assertTrue(self.broker.kernel.closed)
+        self.assertEqual(self._events(), ["start", "stop"])
+        self.assertEqual(len(self.server._darm_locks), 1)
+
+    def test_checkpoint_failure_still_closes_kernel(self):
+        self.audit.checkpoint_now = lambda: "synthetic checkpoint failure"
+
+        result = candidate.coordinate_shutdown(
+            self.server, self.serving, drain_timeout=2
+        )
+
+        self.assertEqual(result["state"], "STOP_RECORDED_CHECKPOINT_FAILED")
+        self.assertTrue(result["kernel_closed"])
+        self.assertTrue(self.broker.kernel.closed)
+        self.assertEqual(self._events(), ["start", "stop"])
+        self.assertEqual(len(self.server._darm_locks), 1)
+
+    def test_shutdown_waits_for_worker_thread_exit(self):
+        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        unregistered = threading.Event()
+        release_worker = threading.Event()
+        original_unregister = self.server._connection_gate.unregister
+
+        def pause_after_unregister(connection):
+            original_unregister(connection)
+            unregistered.set()
+            release_worker.wait(3)
+
+        self.server._connection_gate.unregister = pause_after_unregister
+        result = []
+        try:
+            client.connect(self.server.server_address)
+            deadline = time.monotonic() + 2
+            while self.server._connection_gate.pending != 1:
+                if time.monotonic() >= deadline:
+                    self.fail("idle client was not registered")
+                time.sleep(0.005)
+
+            self.coordinator = threading.Thread(
+                target=lambda: result.append(
+                    candidate.coordinate_shutdown(
+                        self.server, self.serving, drain_timeout=0.2
+                    )
+                ),
+                daemon=True,
+            )
+            self.coordinator.start()
+
+            self.assertTrue(
+                unregistered.wait(2),
+                "worker did not reach post-unregister hold",
+            )
+            self.coordinator.join(timeout=2)
+            self.assertFalse(
+                self.coordinator.is_alive(),
+                "coordinator did not report the worker timeout",
+            )
+            self.assertEqual(result[0]["state"], "INCOMPLETE_DRAIN")
+            self.assertTrue(result[0]["connections_drained"])
+            self.assertFalse(result[0]["workers_drained"])
+            self.assertIn("WORKERS_ALIVE", result[0]["blockers"])
+            self.assertEqual(self._events(), ["start"])
+            self.assertFalse(self.broker.kernel.closed)
+            self.assertEqual(len(self.server._darm_locks), 1)
+        finally:
+            release_worker.set()
+            client.close()
+            if self.coordinator is not None:
+                self.coordinator.join(timeout=2)
+
     def test_completed_socket_worker_is_reaped(self):
         client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:

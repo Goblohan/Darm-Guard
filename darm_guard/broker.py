@@ -1853,6 +1853,11 @@ class _Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
 
             # Retain the worker object before attempting startup.
             with self._worker_tracking_lock:
+                self._worker_threads[:] = [
+                    tracked
+                    for tracked in self._worker_threads
+                    if tracked.is_alive()
+                ]
                 self._worker_threads.append(worker)
 
             worker.start()
@@ -1882,7 +1887,35 @@ class _Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
 
     def worker_snapshot(self):
         with self._worker_tracking_lock:
+            self._worker_threads[:] = [
+                worker
+                for worker in self._worker_threads
+                if worker.is_alive()
+            ]
             return tuple(self._worker_threads)
+
+    def wait_workers_drained(self, timeout=None):
+        deadline = (
+            None if timeout is None else time.monotonic() + timeout
+        )
+
+        while True:
+            workers = self.worker_snapshot()
+            if not workers:
+                return True
+
+            for worker in workers:
+                if deadline is None:
+                    worker.join()
+                    continue
+
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return not self.worker_snapshot()
+                worker.join(timeout=remaining)
+
+            if deadline is not None and time.monotonic() >= deadline:
+                return not self.worker_snapshot()
 
     def startup_fault_snapshot(self):
         with self._worker_tracking_lock:
@@ -1892,13 +1925,10 @@ class _Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
         try:
             super().process_request_thread(request, client_address)
         finally:
-            # Remove worker tracking before releasing the connection
-            # registration. A drained connection then has no worker record.
+            # Keep this worker registered through connection cleanup.
+            # Shutdown joins it after the connection gate drains, which
+            # confirms the thread itself has exited.
             self._detach_activity(request)
-            worker = threading.current_thread()
-            with self._worker_tracking_lock:
-                if worker in self._worker_threads:
-                    self._worker_threads.remove(worker)
             self._connection_gate.unregister(request)
 
     def close_connection_registration(self):
@@ -2611,6 +2641,9 @@ def coordinate_shutdown(server, serving_thread, drain_timeout=10.0):
         requests_drained = server._request_gate.wait_drained(
             timeout=remaining()
         )
+        workers_drained = server.wait_workers_drained(
+            timeout=remaining()
+        )
         broker_barrier = getattr(
             server.broker, "_shutdown_barrier", None
         )
@@ -2623,6 +2656,7 @@ def coordinate_shutdown(server, serving_thread, drain_timeout=10.0):
         if (
             not connections_drained
             or not requests_drained
+            or not workers_drained
             or not broker_transactions_drained
             or blockers
         ):
@@ -2630,6 +2664,7 @@ def coordinate_shutdown(server, serving_thread, drain_timeout=10.0):
                 "state": "INCOMPLETE_DRAIN",
                 "connections_drained": connections_drained,
                 "requests_drained": requests_drained,
+                "workers_drained": workers_drained,
                 "broker_transactions_drained":
                     broker_transactions_drained,
                 "blockers": blockers,
@@ -2648,41 +2683,41 @@ def coordinate_shutdown(server, serving_thread, drain_timeout=10.0):
         else None
     )
 
+    stop_error = None
+    checkpoint_error = None
     try:
         audit.append({"event": "stop"})
-        checkpoint_error = audit.checkpoint_now()
     except Exception as exc:
-        return {
-            "state": "INCOMPLETE_FINALIZATION",
-            "error": f"{type(exc).__name__}: {exc}",
-        }
-
-    if checkpointer is None:
-        return {
-            "state": "STOP_RECORDED_CHECKPOINT_UNAVAILABLE",
-            "release_authorized": False,
-        }
-
-    if checkpoint_error:
-        return {
-            "state": "STOP_RECORDED_CHECKPOINT_FAILED",
-            "error": checkpoint_error,
-            "release_authorized": False,
-        }
-
-    if (
-        checkpointer.last_count != audit.count
-        or checkpointer.published <= published_before
-    ):
-        return {
-            "state": "STOP_RECORDED_CHECKPOINT_UNCONFIRMED",
-            "audit_count": audit.count,
-            "checkpoint_count": checkpointer.last_count,
-            "release_authorized": False,
-        }
+        stop_error = f"{type(exc).__name__}: {exc}"
+    else:
+        try:
+            checkpoint_error = audit.checkpoint_now()
+        except Exception as exc:
+            checkpoint_error = f"{type(exc).__name__}: {exc}"
 
     def record_kernel_cleanup_failure(error):
-        published_before_failure = checkpointer.published
+        if checkpointer is None:
+            try:
+                audit.append({
+                    "event": "kernel_cleanup_failed",
+                    "error": error,
+                })
+            except Exception as exc:
+                return {
+                    "state": "KERNEL_CLEANUP_FAILED_UNRECORDED",
+                    "error": error,
+                    "record_error": f"{type(exc).__name__}: {exc}",
+                    "release_authorized": False,
+                }
+            return {
+                "state": "KERNEL_CLEANUP_FAILED_CHECKPOINT_UNAVAILABLE",
+                "error": error,
+                "release_authorized": False,
+            }
+
+        published_before_failure = getattr(
+            checkpointer, "published", None
+        )
         try:
             audit.append({
                 "event": "kernel_cleanup_failed",
@@ -2706,7 +2741,8 @@ def coordinate_shutdown(server, serving_thread, drain_timeout=10.0):
             }
 
         if (
-            checkpointer.last_count != audit.count
+            not isinstance(published_before_failure, int)
+            or checkpointer.last_count != audit.count
             or checkpointer.published <= published_before_failure
         ):
             return {
@@ -2739,6 +2775,42 @@ def coordinate_shutdown(server, serving_thread, drain_timeout=10.0):
             )
         )
 
+    if stop_error is not None:
+        return {
+            "state": "INCOMPLETE_FINALIZATION",
+            "error": stop_error,
+            "kernel_closed": True,
+            "release_authorized": False,
+        }
+
+    if checkpointer is None:
+        return {
+            "state": "STOP_RECORDED_CHECKPOINT_UNAVAILABLE",
+            "kernel_closed": True,
+            "release_authorized": False,
+        }
+
+    if checkpoint_error:
+        return {
+            "state": "STOP_RECORDED_CHECKPOINT_FAILED",
+            "error": checkpoint_error,
+            "kernel_closed": True,
+            "release_authorized": False,
+        }
+
+    if (
+        not isinstance(published_before, int)
+        or checkpointer.last_count != audit.count
+        or checkpointer.published <= published_before
+    ):
+        return {
+            "state": "STOP_RECORDED_CHECKPOINT_UNCONFIRMED",
+            "audit_count": audit.count,
+            "checkpoint_count": checkpointer.last_count,
+            "kernel_closed": True,
+            "release_authorized": False,
+        }
+
     try:
         release = server.release_governed_resources()
     except Exception as exc:
@@ -2746,6 +2818,7 @@ def coordinate_shutdown(server, serving_thread, drain_timeout=10.0):
             "state": "GOVERNED_RESOURCE_RELEASE_FAILED",
             "error": f"{type(exc).__name__}: {exc}",
             "resources_released": False,
+            "kernel_closed": True,
         }
 
     return {
@@ -2754,8 +2827,8 @@ def coordinate_shutdown(server, serving_thread, drain_timeout=10.0):
         "lock_descriptors_released":
             release["lock_descriptors_released"],
         "terminal_checkpoint_count": audit.count,
+        "kernel_closed": True,
     }
-
 
 def main() -> None:
     import argparse
